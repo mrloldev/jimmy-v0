@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOut, User } from "lucide-react";
+import { FolderKanban, LogOut, MessageSquare, User } from "lucide-react";
+import Link from "next/link";
 import type { Session } from "next-auth";
 import { signOut } from "next-auth/react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -50,6 +51,23 @@ export function UserNav({ session }: UserNavProps) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {!isSignedOut && (
+          <>
+            <DropdownMenuItem asChild>
+              <Link href="/projects" className="cursor-pointer">
+                <FolderKanban className="mr-2 h-4 w-4" />
+                <span>Projects</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/chats" className="cursor-pointer">
+                <MessageSquare className="mr-2 h-4 w-4" />
+                <span>Chats</span>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {(isGuest || isSignedOut) && (
           <>
             <DropdownMenuItem asChild>

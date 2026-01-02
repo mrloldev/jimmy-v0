@@ -11,6 +11,14 @@ const nextConfig: NextConfig = {
   },
   typedRoutes: true,
   poweredByHeader: false,
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "image.thum.io",
+      },
+    ],
+  },
 };
 
 export default nextConfig;
