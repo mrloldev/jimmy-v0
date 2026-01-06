@@ -204,7 +204,7 @@ pnpm typecheck  # Ensure no TypeScript errors
 
 ## Testing
 
-This project is tested with BrowserStack.
+This project is tested with BrowserStack
 
 ## License
 
