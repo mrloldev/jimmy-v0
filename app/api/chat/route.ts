@@ -11,7 +11,6 @@ export async function POST(request: NextRequest) {
       messages,
       message,
       chatId,
-      streaming,
       attachments,
       botId,
       model = "llama3.1-70b",
@@ -21,7 +20,8 @@ export async function POST(request: NextRequest) {
     const validModels = ["llama3.1-8b", "llama3.1-70b"];
     const selectedModel = validModels.includes(model) ? model : "llama3.1-70b";
 
-    const isLegacyFormat = !Array.isArray(messages) && typeof message === "string";
+    const isLegacyFormat =
+      !Array.isArray(messages) && typeof message === "string";
     let apiMessages = isLegacyFormat
       ? toApiMessages(
           ensureMessageIds([{ role: "user", content: message as string }]),
@@ -67,22 +67,50 @@ export async function POST(request: NextRequest) {
       ...(isLegacyFormat && { botId: BOT_ID }),
     };
 
-    const response = await fetch(CHATJIMMY_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "*/*",
-        Origin: request.nextUrl.origin,
-        Referer: request.nextUrl.origin + "/",
-        "User-Agent":
-          request.headers.get("user-agent") ??
-          "Mozilla/5.0 (compatible; Jimmy/1.0)",
-      },
-      body: JSON.stringify(chatJimmyBody),
-    });
+    let response: Response;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+      response = await fetch(CHATJIMMY_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "*/*",
+          Origin: request.nextUrl.origin,
+          Referer: `${request.nextUrl.origin}/`,
+          "User-Agent":
+            request.headers.get("user-agent") ??
+            "Mozilla/5.0 (compatible; Jimmy/1.0)",
+        },
+        body: JSON.stringify(chatJimmyBody),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return NextResponse.json(
+          { error: "Request timeout. Please try again." },
+          { status: 504 },
+        );
+      }
+      if (
+        error instanceof TypeError &&
+        error.message.includes("Failed to fetch")
+      ) {
+        return NextResponse.json(
+          {
+            error: "Network error. Please check your connection and try again.",
+          },
+          { status: 503 },
+        );
+      }
+      throw error;
+    }
 
     if (!response.ok) {
-      const text = await response.text();
+      const text = await response.text().catch(() => "Unknown error");
       console.error("ChatJimmy API error:", response.status, text);
       return NextResponse.json(
         { error: "Failed to process request", details: text },
@@ -91,10 +119,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!response.body) {
-      return NextResponse.json(
-        { error: "No response body" },
-        { status: 500 },
-      );
+      return NextResponse.json({ error: "No response body" }, { status: 500 });
     }
 
     return new Response(response.body, {

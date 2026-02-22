@@ -1,87 +1,10 @@
 import { useRouter } from "next/navigation";
-import { useModel } from "@/contexts/model-context";
 import { useCallback, useEffect, useState } from "react";
 import useSWR, { mutate } from "swr";
+import { useModel } from "@/contexts/model-context";
 import { useStreaming } from "@/contexts/streaming-context";
+import { fetchWithRetry } from "@/lib/fetch-with-retry";
 import type { Chat, ChatMessage } from "@/types/chat";
-
-/**
- * Extracts a chat ID from a nested content structure.
- * Validates that the ID looks like a real chat ID (UUID-like format).
- */
-function extractChatIdFromContent(content: unknown[]): string | undefined {
-  let foundChatId: string | undefined;
-
-  const isValidChatId = (id: string): boolean => {
-    if (id === "hello-world" || id.length <= 10) {
-      return false;
-    }
-    return (id.includes("-") && id.length > 20) || id.length > 15;
-  };
-
-  const search = (obj: unknown): void => {
-    if (foundChatId || !obj || typeof obj !== "object") {
-      return;
-    }
-
-    const record = obj as Record<string, unknown>;
-
-    if (
-      record.chatId &&
-      typeof record.chatId === "string" &&
-      isValidChatId(record.chatId)
-    ) {
-      foundChatId = record.chatId;
-      return;
-    }
-
-    if (
-      !foundChatId &&
-      record.id &&
-      typeof record.id === "string" &&
-      isValidChatId(record.id)
-    ) {
-      foundChatId = record.id;
-      return;
-    }
-
-    if (Array.isArray(obj)) {
-      obj.forEach(search);
-    } else {
-      Object.values(record).forEach(search);
-    }
-  };
-
-  content.forEach(search);
-  return foundChatId;
-}
-
-/**
- * Fetches chat details and updates SWR cache.
- */
-async function fetchAndCacheChatDetails(chatId: string): Promise<void> {
-  try {
-    const response = await fetch(`/api/chats/${chatId}`);
-    if (response.ok) {
-      const chatDetails = await response.json();
-      const demoUrl = chatDetails?.latestVersion?.demoUrl || chatDetails?.demo;
-      mutate(`/api/chats/${chatId}`, { ...chatDetails, demo: demoUrl }, false);
-    } else {
-      mutate(
-        `/api/chats/${chatId}`,
-        { id: chatId, demo: `Generated Chat ${chatId}` },
-        false,
-      );
-    }
-  } catch (error) {
-    console.error("Error fetching chat details:", error);
-    mutate(
-      `/api/chats/${chatId}`,
-      { id: chatId, demo: `Generated Chat ${chatId}` },
-      false,
-    );
-  }
-}
 
 /**
  * Parses error response and returns appropriate error message.
@@ -212,10 +135,13 @@ export function useChat(chatId: string) {
       try {
         let plan: string | undefined;
         if (useCoT) {
-          const planRes = await fetch("/api/chat/plan", {
+          const planRes = await fetchWithRetry("/api/chat/plan", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: userMessage }),
+            retries: 2,
+            retryDelay: 1000,
+            timeout: 15000,
           });
           if (!planRes.ok) {
             throw new Error(await parseErrorResponse(planRes));
@@ -235,12 +161,17 @@ export function useChat(chatId: string) {
           model,
           ...(attachments && attachments.length > 0 && { attachments }),
         };
-        if (plan) chatBody.plan = plan;
+        if (plan) {
+          chatBody.plan = plan;
+        }
 
-        const response = await fetch("/api/chat", {
+        const response = await fetchWithRetry("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(chatBody),
+          retries: 2,
+          retryDelay: 1000,
+          timeout: 60000,
         });
 
         if (!response.ok) {

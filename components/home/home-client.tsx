@@ -28,6 +28,7 @@ import { AppHeader } from "@/components/shared/app-header";
 import { ModelSwitcher } from "@/components/shared/model-switcher";
 import { ResizableLayout } from "@/components/shared/resizable-layout";
 import { useModel } from "@/contexts/model-context";
+import { fetchWithRetry } from "@/lib/fetch-with-retry";
 import { SUGGESTIONS } from "@/lib/suggestions";
 
 // Component that uses useSearchParams - needs to be wrapped in Suspense
@@ -208,10 +209,13 @@ export function HomeClient() {
     try {
       let plan: string | undefined;
       if (useCoT) {
-        const planRes = await fetch("/api/chat/plan", {
+        const planRes = await fetchWithRetry("/api/chat/plan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: userMessage }),
+          retries: 2,
+          retryDelay: 1000,
+          timeout: 15000,
         });
         if (!planRes.ok) {
           const err = await getErrorMessage(planRes);
@@ -236,10 +240,13 @@ export function HomeClient() {
         chatBody.plan = plan;
       }
 
-      const response = await fetch("/api/chat", {
+      const response = await fetchWithRetry("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(chatBody),
+        retries: 2,
+        retryDelay: 1000,
+        timeout: 60000,
       });
 
       if (!response.ok) {

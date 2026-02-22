@@ -27,17 +27,26 @@ export function JimmyStreamingMessage({
   const blobUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!stream || startedRef.current) return;
+    if (!stream || startedRef.current) {
+      return;
+    }
     startedRef.current = true;
 
+    let isCancelled = false;
+
     consumeSSEStream(stream, (chunk) => {
-      setDisplayText((prev) => prev + chunk);
-      onChunk?.(chunk);
+      if (!isCancelled) {
+        setDisplayText((prev) => prev + chunk);
+        onChunk?.(chunk);
+      }
     })
       .then(({ text, stats }) => {
+        if (isCancelled) {
+          return;
+        }
         onComplete(text, stats);
         const { react, head, css } = parseStructuredOutput(text);
-        if (react) {
+        if (react && !isCancelled) {
           try {
             const fullHtml = buildFullDocument(
               react,
@@ -46,27 +55,43 @@ export function JimmyStreamingMessage({
               css || undefined,
             );
             if (blobUrlRef.current) {
-              URL.revokeObjectURL(blobUrlRef.current);
+              try {
+                URL.revokeObjectURL(blobUrlRef.current);
+              } catch (e) {
+                console.warn("Failed to revoke blob URL:", e);
+              }
             }
             const blob = new Blob([fullHtml], {
               type: "text/html;charset=utf-8",
             });
             const url = URL.createObjectURL(blob);
             blobUrlRef.current = url;
-            onPreviewReady?.(url);
+            if (!isCancelled) {
+              onPreviewReady?.(url);
+            }
           } catch (e) {
             console.error("Failed to build preview:", e);
+            if (!isCancelled) {
+              onError?.(e instanceof Error ? e : new Error(String(e)));
+            }
           }
         }
       })
       .catch((err) => {
-        onError?.(err instanceof Error ? err : new Error(String(err)));
-        onComplete("", null);
+        if (!isCancelled) {
+          onError?.(err instanceof Error ? err : new Error(String(err)));
+          onComplete("", null);
+        }
       });
 
     return () => {
+      isCancelled = true;
       if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
+        try {
+          URL.revokeObjectURL(blobUrlRef.current);
+        } catch (e) {
+          console.warn("Failed to revoke blob URL on cleanup:", e);
+        }
         blobUrlRef.current = null;
       }
     };

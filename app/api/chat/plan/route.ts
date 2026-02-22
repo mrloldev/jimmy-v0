@@ -34,22 +34,50 @@ export async function POST(request: NextRequest) {
       botId: BOT_ID,
     };
 
-    const response = await fetch(CHATJIMMY_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "*/*",
-        Origin: request.nextUrl.origin,
-        Referer: request.nextUrl.origin + "/",
-        "User-Agent":
-          request.headers.get("user-agent") ??
-          "Mozilla/5.0 (compatible; Jimmy/1.0)",
-      },
-      body: JSON.stringify(chatJimmyBody),
-    });
+    let response: Response;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      response = await fetch(CHATJIMMY_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "*/*",
+          Origin: request.nextUrl.origin,
+          Referer: `${request.nextUrl.origin}/`,
+          "User-Agent":
+            request.headers.get("user-agent") ??
+            "Mozilla/5.0 (compatible; Jimmy/1.0)",
+        },
+        body: JSON.stringify(chatJimmyBody),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return NextResponse.json(
+          { error: "Request timeout. Please try again." },
+          { status: 504 },
+        );
+      }
+      if (
+        error instanceof TypeError &&
+        error.message.includes("Failed to fetch")
+      ) {
+        return NextResponse.json(
+          {
+            error: "Network error. Please check your connection and try again.",
+          },
+          { status: 503 },
+        );
+      }
+      throw error;
+    }
 
     if (!response.ok) {
-      const text = await response.text();
+      const text = await response.text().catch(() => "Unknown error");
       console.error("ChatJimmy plan API error:", response.status, text);
       return NextResponse.json(
         { error: "Failed to generate plan", details: text },
@@ -58,13 +86,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (!response.body) {
-      return NextResponse.json(
-        { error: "No response body" },
-        { status: 500 },
-      );
+      return NextResponse.json({ error: "No response body" }, { status: 500 });
     }
 
-    const { text } = await consumeSSEStream(response.body, () => {});
+    const { text } = await consumeSSEStream(response.body, () => {
+      // No-op callback for plan generation
+    });
 
     return NextResponse.json({ plan: text.trim() });
   } catch (error) {

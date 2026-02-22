@@ -51,9 +51,27 @@ async function getHtmlFromPreviewUrl(url: string): Promise<string | null> {
   }
   if (url.startsWith("blob:")) {
     try {
-      const res = await fetch(url);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        return null;
+      }
       return await res.text();
-    } catch {
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          console.warn("Blob URL fetch timeout");
+        } else if (
+          error.message.includes("Failed to fetch") ||
+          error.message.includes("ERR_FILE_NOT_FOUND")
+        ) {
+          console.warn("Blob URL not available (may have been revoked)");
+        }
+      }
       return null;
     }
   }
