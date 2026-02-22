@@ -1,8 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getChatDemo } from "@/lib/db/queries";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ chatId: string }> },
 ) {
   try {
@@ -15,13 +14,8 @@ export async function GET(
       );
     }
 
-    const demo = await getChatDemo(chatId);
-    const origin = request.nextUrl.origin;
-    const demoUrl = demo ? `${origin}/u/${chatId}` : undefined;
-
     return NextResponse.json({
       id: chatId,
-      demo: demoUrl,
     });
   } catch (error) {
     console.error("Error fetching chat details:", error);
