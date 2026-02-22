@@ -328,9 +328,9 @@ export function HomeClient() {
     }
   };
 
-  const handlePreviewReady = (dataUrl: string) => {
+  const handlePreviewReady = (reactCode: string) => {
     setCurrentChat((prev) =>
-      prev ? { ...prev, demo: dataUrl } : { id: nanoid(), demo: dataUrl },
+      prev ? { ...prev, reactCode } : { id: nanoid(), reactCode },
     );
     setRefreshKey((k) => k + 1);
   };

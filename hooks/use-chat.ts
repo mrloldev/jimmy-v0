@@ -249,11 +249,11 @@ export function useChat(chatId: string) {
   );
 
   const handlePreviewReady = useCallback(
-    (dataUrl: string) => {
+    (reactCode: string) => {
       mutate(
         `/api/chats/${chatId}`,
         (prev: Chat | undefined) =>
-          prev ? { ...prev, demo: dataUrl } : { id: chatId, demo: dataUrl },
+          prev ? { ...prev, reactCode } : { id: chatId, reactCode },
         false,
       );
     },

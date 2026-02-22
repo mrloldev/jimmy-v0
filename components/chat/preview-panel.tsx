@@ -15,11 +15,11 @@ import {
 } from "@/components/ai-elements/code-block";
 import {
   WebPreview,
-  WebPreviewBody,
   WebPreviewNavigation,
   WebPreviewNavigationButton,
   WebPreviewUrl,
 } from "@/components/ai-elements/web-preview";
+import { ReactRenderer } from "@/components/chat/react-renderer";
 import { Button } from "@/components/ui/button";
 import { fetchWithRetry } from "@/lib/fetch-with-retry";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 interface Chat {
   id: string;
   demo?: string;
+  reactCode?: string;
   url?: string;
 }
 
@@ -38,90 +39,22 @@ interface PreviewPanelProps {
   setRefreshKey: (key: number | ((prev: number) => number)) => void;
 }
 
-async function getHtmlFromPreviewUrl(url: string): Promise<string | null> {
-  if (url.startsWith("data:text/html")) {
-    const match = url.match(/^data:text\/html;charset=utf-8,(.+)$/);
-    if (!match) {
+async function getReactCode(chatId: string): Promise<string | null> {
+  try {
+    const res = await fetchWithRetry(`/api/chats/${chatId}/react`, {
+      retries: 2,
+      retryDelay: 1000,
+      timeout: 10000,
+    });
+    if (!res.ok) {
       return null;
     }
-    try {
-      return decodeURIComponent(match[1]);
-    } catch {
-      return null;
-    }
+    const data = await res.json();
+    return data.reactCode || null;
+  } catch (error) {
+    console.warn("Failed to fetch React code:", error);
+    return null;
   }
-
-  if (url.includes("/u/")) {
-    try {
-      const chatId = url.split("/u/")[1]?.split("?")[0]?.split("#")[0];
-      if (!chatId) {
-        return null;
-      }
-      const res = await fetchWithRetry(`/u/${chatId}`, {
-        retries: 2,
-        retryDelay: 1000,
-        timeout: 10000,
-      });
-      if (!res.ok) {
-        return null;
-      }
-      return await res.text();
-    } catch (error) {
-      console.warn("Failed to fetch HTML from shared URL:", error);
-      return null;
-    }
-  }
-
-  if (url.startsWith("blob:")) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
-
-      if (!res.ok) {
-        return null;
-      }
-      return await res.text();
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.name === "AbortError") {
-          console.warn("Blob URL fetch timeout");
-        } else if (
-          error.message.includes("Failed to fetch") ||
-          error.message.includes("ERR_FILE_NOT_FOUND")
-        ) {
-          console.warn("Blob URL not available (may have been revoked)");
-        }
-      }
-      return null;
-    }
-  }
-  return null;
-}
-
-function extractReactCodeFromHtml(html: string): string {
-  const scriptMatch = html.match(
-    /<script[^>]*type=["']text\/babel["'][^>]*>([\s\S]*?)<\/script>/i,
-  );
-  if (!scriptMatch) {
-    return "";
-  }
-  const scriptContent = scriptMatch[1];
-  const reactMatch = scriptContent.match(
-    /const\s+\{\s*useState[^}]*\}\s*=\s*React;[\s\S]*?(function\s+App[\s\S]*?ReactDOM\.createRoot[^;]*;)/,
-  );
-  if (reactMatch) {
-    return reactMatch[1].trim();
-  }
-  const appMatch = scriptContent.match(
-    /(function\s+App[\s\S]*?ReactDOM\.createRoot[^;]*;)/,
-  );
-  if (appMatch) {
-    return appMatch[1].trim();
-  }
-  return scriptContent.trim();
 }
 
 export function PreviewPanel({
@@ -153,35 +86,41 @@ export function PreviewPanel({
       return;
     }
 
-    const demo = currentChat?.demo;
-    if (!demo) {
+    const chatId = currentChat?.id;
+    if (!chatId) {
       return;
     }
 
-    const html = await getHtmlFromPreviewUrl(demo);
-    if (!html) {
+    if (currentChat?.reactCode) {
+      setReactCode(currentChat.reactCode);
+      setShowCode(true);
       return;
     }
 
-    const code = extractReactCodeFromHtml(html);
-    setReactCode(code);
-    setShowCode(true);
-  }, [currentChat?.demo, showCode]);
+    const code = await getReactCode(chatId);
+    if (code) {
+      setReactCode(code);
+      setShowCode(true);
+    }
+  }, [currentChat?.id, currentChat?.reactCode, showCode]);
 
   const handleShare = useCallback(async () => {
-    const demo = currentChat?.demo;
     const chatId = currentChat?.id;
-    if (!(demo && chatId)) {
+    if (!chatId) {
       return;
     }
 
-    const html = await getHtmlFromPreviewUrl(demo);
-    if (!html) {
+    const reactCode = currentChat?.reactCode || (await getReactCode(chatId));
+    if (!reactCode) {
+      alert("No React code available to share");
       return;
     }
 
     setIsSharing(true);
     try {
+      const { buildFullDocument } = await import("@/lib/parse-output");
+      const html = buildFullDocument(reactCode);
+
       const res = await fetchWithRetry("/api/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -217,7 +156,7 @@ export function PreviewPanel({
     } finally {
       setIsSharing(false);
     }
-  }, [currentChat?.demo, currentChat?.id]);
+  }, [currentChat?.id, currentChat?.reactCode]);
 
   const showShareUrl = !!shareUrl;
 
@@ -235,7 +174,7 @@ export function PreviewPanel({
           <WebPreviewNavigationButton
             onClick={() => setRefreshKey((prev) => prev + 1)}
             tooltip="Refresh preview"
-            disabled={!currentChat?.demo}
+            disabled={!currentChat?.reactCode}
           >
             <RefreshCw className="h-4 w-4" />
           </WebPreviewNavigationButton>
@@ -264,11 +203,11 @@ export function PreviewPanel({
               <WebPreviewUrl
                 readOnly
                 placeholder={
-                  currentChat?.demo
+                  currentChat?.reactCode
                     ? "Click Share to get link"
                     : "Your app will appear here..."
                 }
-                value={currentChat?.demo ? "" : ""}
+                value=""
                 className="flex-1"
               />
             )}
@@ -276,7 +215,7 @@ export function PreviewPanel({
           <WebPreviewNavigationButton
             onClick={handleToggleCode}
             tooltip={showCode ? "View preview" : "View code"}
-            disabled={!currentChat?.demo}
+            disabled={!currentChat?.reactCode}
           >
             {showCode ? (
               <Monitor className="h-4 w-4" />
@@ -287,14 +226,14 @@ export function PreviewPanel({
           <WebPreviewNavigationButton
             onClick={handleShare}
             tooltip="Share and copy link"
-            disabled={!(currentChat?.demo && currentChat?.id) || isSharing}
+            disabled={!currentChat?.reactCode || isSharing}
           >
             <Share2 className={cn("h-4 w-4", isSharing && "animate-pulse")} />
           </WebPreviewNavigationButton>
           <WebPreviewNavigationButton
             onClick={() => setIsFullscreen(!isFullscreen)}
             tooltip={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-            disabled={!currentChat?.demo}
+            disabled={!currentChat?.reactCode}
           >
             {isFullscreen ? (
               <Minimize className="h-4 w-4" />
@@ -303,7 +242,7 @@ export function PreviewPanel({
             )}
           </WebPreviewNavigationButton>
         </WebPreviewNavigation>
-        {currentChat?.demo ? (
+        {currentChat?.reactCode ? (
           showCode ? (
             <div className="flex flex-1 overflow-auto bg-background p-4">
               <div className="mx-auto w-full max-w-4xl">
@@ -319,9 +258,9 @@ export function PreviewPanel({
               </div>
             </div>
           ) : (
-            <WebPreviewBody
+            <ReactRenderer
               key={refreshKey}
-              src={currentChat.demo}
+              reactCode={currentChat.reactCode}
               className="min-h-0 bg-base-200/50"
             />
           )

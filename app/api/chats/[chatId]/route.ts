@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { getChatDemo } from "@/lib/db/queries";
 
 export async function GET(
   _request: NextRequest,
@@ -14,8 +15,12 @@ export async function GET(
       );
     }
 
+    const demo = await getChatDemo(chatId);
+    const reactCode = demo?.html || undefined;
+
     return NextResponse.json({
       id: chatId,
+      reactCode,
     });
   } catch (error) {
     console.error("Error fetching chat details:", error);

@@ -37,6 +37,7 @@ export interface TaskPart {
 export interface Chat {
   id: string;
   demo?: string;
+  reactCode?: string;
   url?: string;
   messages?: ChatMessageData[];
 }
