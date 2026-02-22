@@ -1,7 +1,18 @@
 "use client";
 
-import { Maximize, Minimize, Monitor, RefreshCw, Share2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  Code,
+  Maximize,
+  Minimize,
+  Monitor,
+  RefreshCw,
+  Share2,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  CodeBlock,
+  CodeBlockCopyButton,
+} from "@/components/ai-elements/code-block";
 import {
   WebPreview,
   WebPreviewBody,
@@ -29,7 +40,9 @@ interface PreviewPanelProps {
 async function getHtmlFromPreviewUrl(url: string): Promise<string | null> {
   if (url.startsWith("data:text/html")) {
     const match = url.match(/^data:text\/html;charset=utf-8,(.+)$/);
-    if (!match) return null;
+    if (!match) {
+      return null;
+    }
     try {
       return decodeURIComponent(match[1]);
     } catch {
@@ -47,6 +60,29 @@ async function getHtmlFromPreviewUrl(url: string): Promise<string | null> {
   return null;
 }
 
+function extractReactCodeFromHtml(html: string): string {
+  const scriptMatch = html.match(
+    /<script[^>]*type=["']text\/babel["'][^>]*>([\s\S]*?)<\/script>/i,
+  );
+  if (!scriptMatch) {
+    return "";
+  }
+  const scriptContent = scriptMatch[1];
+  const reactMatch = scriptContent.match(
+    /const\s+\{\s*useState[^}]*\}\s*=\s*React;[\s\S]*?(function\s+App[\s\S]*?ReactDOM\.createRoot[^;]*;)/,
+  );
+  if (reactMatch) {
+    return reactMatch[1].trim();
+  }
+  const appMatch = scriptContent.match(
+    /(function\s+App[\s\S]*?ReactDOM\.createRoot[^;]*;)/,
+  );
+  if (appMatch) {
+    return appMatch[1].trim();
+  }
+  return scriptContent.trim();
+}
+
 export function PreviewPanel({
   currentChat,
   isFullscreen,
@@ -57,18 +93,51 @@ export function PreviewPanel({
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showCode, setShowCode] = useState(false);
+  const [reactCode, setReactCode] = useState<string>("");
+  const prevChatIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    setShareUrl(null);
-  }, [currentChat?.demo]);
+    const currentChatId = currentChat?.id;
+    if (prevChatIdRef.current !== currentChatId) {
+      setShareUrl(null);
+      setShowCode(false);
+      prevChatIdRef.current = currentChatId;
+    }
+  });
+
+  const handleToggleCode = useCallback(async () => {
+    if (showCode) {
+      setShowCode(false);
+      return;
+    }
+
+    const demo = currentChat?.demo;
+    if (!demo) {
+      return;
+    }
+
+    const html = await getHtmlFromPreviewUrl(demo);
+    if (!html) {
+      return;
+    }
+
+    const code = extractReactCodeFromHtml(html);
+    setReactCode(code);
+    setShowCode(true);
+  }, [currentChat?.demo, showCode]);
 
   const handleShare = useCallback(async () => {
     const demo = currentChat?.demo;
     const chatId = currentChat?.id;
-    if (!demo || !chatId) return;
+    if (!(demo && chatId)) {
+      return;
+    }
 
     const html = await getHtmlFromPreviewUrl(demo);
-    if (!html) return;
+    if (!html) {
+      return;
+    }
 
     setIsSharing(true);
     try {
@@ -97,7 +166,9 @@ export function PreviewPanel({
     <div
       className={cn(
         "flex h-full flex-col overflow-hidden rounded-xl border border-border/60 bg-card shadow-lg transition-all duration-300",
-        isFullscreen ? "fixed inset-4 z-50 rounded-2xl bg-white dark:bg-black" : "flex-1",
+        isFullscreen
+          ? "fixed inset-4 z-50 rounded-2xl bg-white dark:bg-black"
+          : "flex-1",
       )}
     >
       <WebPreview defaultUrl={currentChat?.demo || ""}>
@@ -112,7 +183,7 @@ export function PreviewPanel({
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {showShareUrl ? (
               <>
-                <span className="truncate rounded-md bg-background/80 px-3 py-1.5 font-mono text-xs text-muted-foreground">
+                <span className="truncate rounded-md bg-background/80 px-3 py-1.5 font-mono text-muted-foreground text-xs">
                   {shareUrl}
                 </span>
                 <Button
@@ -144,9 +215,20 @@ export function PreviewPanel({
             )}
           </div>
           <WebPreviewNavigationButton
+            onClick={handleToggleCode}
+            tooltip={showCode ? "View preview" : "View code"}
+            disabled={!currentChat?.demo}
+          >
+            {showCode ? (
+              <Monitor className="h-4 w-4" />
+            ) : (
+              <Code className="h-4 w-4" />
+            )}
+          </WebPreviewNavigationButton>
+          <WebPreviewNavigationButton
             onClick={handleShare}
             tooltip="Share and copy link"
-            disabled={!currentChat?.demo || !currentChat?.id || isSharing}
+            disabled={!(currentChat?.demo && currentChat?.id) || isSharing}
           >
             <Share2 className={cn("h-4 w-4", isSharing && "animate-pulse")} />
           </WebPreviewNavigationButton>
@@ -163,14 +245,30 @@ export function PreviewPanel({
           </WebPreviewNavigationButton>
         </WebPreviewNavigation>
         {currentChat?.demo ? (
-          <WebPreviewBody
-            key={refreshKey}
-            src={currentChat.demo}
-            className="min-h-0 bg-base-200/50"
-          />
+          showCode ? (
+            <div className="flex flex-1 overflow-auto bg-background p-4">
+              <div className="mx-auto w-full max-w-4xl">
+                {reactCode ? (
+                  <CodeBlock code={reactCode} language="jsx" showLineNumbers>
+                    <CodeBlockCopyButton />
+                  </CodeBlock>
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <p className="text-muted-foreground">Loading code...</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <WebPreviewBody
+              key={refreshKey}
+              src={currentChat.demo}
+              className="min-h-0 bg-base-200/50"
+            />
+          )
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-gradient-to-b from-muted/20 to-muted/5">
-            <div className="rounded-2xl border border-dashed border-border/60 bg-background/50 p-8 text-center">
+            <div className="rounded-2xl border border-border/60 border-dashed bg-background/50 p-8 text-center">
               <Monitor className="mx-auto mb-4 h-14 w-14 text-muted-foreground/60" />
               <p className="font-medium text-foreground">No preview yet</p>
               <p className="mt-1 text-muted-foreground text-sm">

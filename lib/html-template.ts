@@ -40,7 +40,9 @@ function stripMarkdownCodeBlock(code: string): string {
   const m = s.match(VALID_CODE_START);
   if (m) {
     const idx = s.search(VALID_CODE_START);
-    if (idx > 0) s = s.slice(idx);
+    if (idx > 0) {
+      s = s.slice(idx);
+    }
   }
   return s.trim();
 }
@@ -61,7 +63,9 @@ function fixCommonMistakes(code: string): string {
       'className={"$1" + ($2)}',
     )
     .replace(/dangerouslySetInnerHTML=\{[^}]*getStats\(\)[^}]*\}/g, "")
-    .replace(/dangerouslySetInnerHTML=\{[^}]*\}/g, "");
+    .replace(/dangerouslySetInnerHTML=\{[^}]*\}/g, "")
+    .replace(/\)\s*_[a-zA-Z0-9]+(?=\s*[}>])/g, ")")
+    .replace(/prophets:/g, "sm:");
   const misplacedUseEffect =
     /(return\s*\([\s\S]*?\n\s*\)\s*;)\s*(useEffect\s*\([^)]*\)\s*=>\s*\{[\s\S]*?\},\s*\[[^\]]*\]\s*\)\s*;)\s*return\s*<[^>]+>[^<]*<\/[^>]+>\s*;/;
   s = s.replace(misplacedUseEffect, "$2\n\n$1");
@@ -144,7 +148,9 @@ function normalizeTodoAddHandler(code: string): string {
     code.includes("const [tasks, setTasks]") &&
     code.includes("const [inputVal, setInputVal]") &&
     code.includes("const add = () =>");
-  if (!looksLikeTodo) return code;
+  if (!looksLikeTodo) {
+    return code;
+  }
   return code.replace(
     /const add = \(\) => \{[\s\S]*?\n\s*\};/,
     `const add = () => {
@@ -155,6 +161,47 @@ function normalizeTodoAddHandler(code: string): string {
     }
   };`,
   );
+}
+
+function repairDanglingUseEffect(code: string): string {
+  return code
+    .replace(
+      /useEffect\(\(\)\s*=>\s*\{\s*lucide\.createIcons\(\);\s*\}\s*(?=\n\s*ReactDOM)/g,
+      "useEffect(() => { lucide.createIcons(); }, [tasks]);",
+    )
+    .replace(
+      /useEffect\(\(\)\s*=>\s*\{\s*lucide\.createIcons\(\);\s*\}\s*(?=\n|$)/g,
+      "useEffect(() => { lucide.createIcons(); }, [tasks]);",
+    );
+}
+
+function ensureFunctionWrapper(code: string): string {
+  const trimmed = code.trim();
+  if (/^function\s+App\s*\(/.test(trimmed)) {
+    return code;
+  }
+  if (
+    /^const\s+App\s*=\s*\(/.test(trimmed) ||
+    /^const\s+App\s*=\s*\(/.test(trimmed)
+  ) {
+    return code;
+  }
+  if (trimmed.includes("function") && trimmed.includes("App")) {
+    return code;
+  }
+  if (
+    (trimmed.includes("const [tasks") ||
+      trimmed.includes("const [filter") ||
+      trimmed.includes("return (")) &&
+    !trimmed.match(/^function\s+\w+\s*\(/m)
+  ) {
+    const lines = trimmed.split("\n");
+    const indented = lines
+      .map((line) => (line.trim() ? `  ${line}` : line))
+      .join("\n");
+    return `function App() {\n${indented}\n}`;
+  }
+  return code;
 }
 
 function repairCommonTail(code: string): string {
@@ -194,7 +241,9 @@ function truncateToRenderCall(code: string): string {
 }
 
 function getBodyStyle(css?: string): string {
-  if (!css?.trim()) return "";
+  if (!css?.trim()) {
+    return "";
+  }
   const safe = css.replace(/<\/style>/gi, "").trim();
   return safe ? `<style>${safe}</style>\n  ` : "";
 }
@@ -238,9 +287,11 @@ export function buildFullHtmlReact(
   processed = stripAllUuids(processed);
   processed = stripNonAsciiNoise(processed);
   processed = stripImports(processed);
+  processed = ensureFunctionWrapper(processed);
 
   processed = fixCommonMistakes(processed);
   processed = normalizeTodoAddHandler(processed);
+  processed = repairDanglingUseEffect(processed);
 
   processed = ensureRenderCall(processed);
   processed = truncateToRenderCall(processed);
@@ -251,7 +302,7 @@ export function buildFullHtmlReact(
   return REACT_BASE_TEMPLATE.replace("{{BASE_TAG}}", getBaseTag(baseUrl))
     .replace(
       "{{HEAD_CONTENT}}",
-      headContent?.trim() ? headContent.trim() + "\n  " : "",
+      headContent?.trim() ? `${headContent.trim()}\n  ` : "",
     )
     .replace("{{BODY_STYLE}}", getBodyStyle(bodyCss))
     .replace("{{REACT_CONTENT}}", safe);

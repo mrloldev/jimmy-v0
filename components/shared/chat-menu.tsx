@@ -101,7 +101,7 @@ export function ChatMenu({ chatId }: ChatMenuProps) {
         <DropdownMenuContent align="end">
           <DropdownMenuItem asChild>
             <a
-              href={`https://chatjimmy.ai`}
+              href={"https://chatjimmy.ai"}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center"
