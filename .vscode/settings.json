@@ -37,7 +37,7 @@
   "editor.tabSize": 2,
   "editor.wordWrap": "on",
   "explorer.sortOrder": "type",
-  "extensions.ignoreRecommendations": false,
+  "extensions.ignoreRecommendations": true,
   "files.autoSave": "off",
   "files.eol": "\n",
   "javascript.preferences.quoteStyle": "double",
