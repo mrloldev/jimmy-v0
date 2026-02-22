@@ -219,25 +219,31 @@ export function useChat(chatId: string) {
 
   const handleStreamingComplete = useCallback(
     async (finalContent: string, stats?: Record<string, unknown> | null) => {
-      setIsStreaming(false);
-      setIsLoading(false);
-      const { parseStructuredOutput } = await import("@/lib/parse-output");
-      const { userResponse } = parseStructuredOutput(finalContent);
-      const displayContent = userResponse || finalContent;
-      setChatHistory((prev) => {
-        const updated = [...prev];
-        const lastIndex = updated.length - 1;
-        if (lastIndex >= 0 && updated[lastIndex].isStreaming) {
-          updated[lastIndex] = {
-            ...updated[lastIndex],
-            content: displayContent,
-            isStreaming: false,
-            stream: undefined,
-            stats: stats ?? undefined,
-          };
-        }
-        return updated;
-      });
+      try {
+        setIsStreaming(false);
+        setIsLoading(false);
+        const { parseStructuredOutput } = await import("@/lib/parse-output");
+        const { userResponse } = parseStructuredOutput(finalContent || "");
+        const displayContent = userResponse || finalContent || "";
+        setChatHistory((prev) => {
+          const updated = [...prev];
+          const lastIndex = updated.length - 1;
+          if (lastIndex >= 0 && updated[lastIndex]?.isStreaming) {
+            updated[lastIndex] = {
+              ...updated[lastIndex],
+              content: displayContent,
+              isStreaming: false,
+              stream: undefined,
+              stats: stats ?? undefined,
+            };
+          }
+          return updated;
+        });
+      } catch (error) {
+        console.error("Error in handleStreamingComplete:", error);
+        setIsStreaming(false);
+        setIsLoading(false);
+      }
     },
     [],
   );

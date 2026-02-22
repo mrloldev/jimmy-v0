@@ -47,6 +47,10 @@ export async function consumeSSEStream(
   stream: ReadableStream<Uint8Array>,
   onChunk: (text: string) => void,
 ): Promise<{ text: string; stats: Record<string, unknown> | null }> {
+  if (!stream) {
+    throw new Error("Stream is required");
+  }
+
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -82,7 +86,11 @@ export async function consumeSSEStream(
 
       if (rawMode) {
         fullText += chunk;
-        onChunk(chunk);
+        try {
+          onChunk(chunk);
+        } catch (chunkError) {
+          console.warn("Error in onChunk callback:", chunkError);
+        }
         buffer = "";
         continue;
       }
@@ -123,7 +131,11 @@ export async function consumeSSEStream(
 
           if (text) {
             fullText += text;
-            onChunk(text);
+            try {
+              onChunk(text);
+            } catch (chunkError) {
+              console.warn("Error in onChunk callback:", chunkError);
+            }
           }
         }
       }
@@ -161,11 +173,22 @@ export async function consumeSSEStream(
       }
       if (text) {
         fullText += text;
-        onChunk(text);
+        try {
+          onChunk(text);
+        } catch (chunkError) {
+          console.warn("Error in onChunk callback:", chunkError);
+        }
       }
     }
+  } catch (error) {
+    console.error("Error consuming SSE stream:", error);
+    throw error instanceof Error ? error : new Error(String(error));
   } finally {
-    reader.releaseLock();
+    try {
+      reader.releaseLock();
+    } catch (error) {
+      console.warn("Error releasing stream reader lock:", error);
+    }
   }
 
   let stats: Record<string, unknown> | null = sseStats;

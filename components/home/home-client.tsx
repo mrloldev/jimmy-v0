@@ -302,25 +302,30 @@ export function HomeClient() {
     finalContent: string,
     stats?: Record<string, unknown> | null,
   ) => {
-    setIsLoading(false);
-    const { parseStructuredOutput } = await import("@/lib/parse-output");
-    const { userResponse } = parseStructuredOutput(finalContent);
-    const displayContent = userResponse || finalContent;
+    try {
+      setIsLoading(false);
+      const { parseStructuredOutput } = await import("@/lib/parse-output");
+      const { userResponse } = parseStructuredOutput(finalContent || "");
+      const displayContent = userResponse || finalContent || "";
 
-    setChatHistory((prev) => {
-      const updated = [...prev];
-      const lastIndex = updated.length - 1;
-      if (lastIndex >= 0 && updated[lastIndex].isStreaming) {
-        updated[lastIndex] = {
-          ...updated[lastIndex],
-          content: displayContent,
-          isStreaming: false,
-          stream: undefined,
-          stats: stats ?? undefined,
-        };
-      }
-      return updated;
-    });
+      setChatHistory((prev) => {
+        const updated = [...prev];
+        const lastIndex = updated.length - 1;
+        if (lastIndex >= 0 && updated[lastIndex]?.isStreaming) {
+          updated[lastIndex] = {
+            ...updated[lastIndex],
+            content: displayContent,
+            isStreaming: false,
+            stream: undefined,
+            stats: stats ?? undefined,
+          };
+        }
+        return updated;
+      });
+    } catch (error) {
+      console.error("Error in handleStreamingComplete:", error);
+      setIsLoading(false);
+    }
   };
 
   const handlePreviewReady = (dataUrl: string) => {
