@@ -21,6 +21,7 @@ import {
   WebPreviewUrl,
 } from "@/components/ai-elements/web-preview";
 import { Button } from "@/components/ui/button";
+import { fetchWithRetry } from "@/lib/fetch-with-retry";
 import { cn } from "@/lib/utils";
 
 interface Chat {
@@ -159,20 +160,38 @@ export function PreviewPanel({
 
     setIsSharing(true);
     try {
-      const res = await fetch("/api/share", {
+      const res = await fetchWithRetry("/api/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: chatId, html }),
+        retries: 2,
+        retryDelay: 1000,
+        timeout: 15000,
       });
+
+      if (!res.ok) {
+        throw new Error(`Share request failed: ${res.status}`);
+      }
+
       const data = await res.json();
-      if (data.url) {
+      if (data?.url) {
         setShareUrl(data.url);
-        await navigator.clipboard.writeText(data.url);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        try {
+          await navigator.clipboard.writeText(data.url);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch (clipboardError) {
+          console.warn("Failed to copy to clipboard:", clipboardError);
+          setShareUrl(data.url);
+        }
+      } else {
+        throw new Error("No URL returned from share API");
       }
     } catch (e) {
       console.error("Share failed:", e);
+      const errorMessage =
+        e instanceof Error ? e.message : "Failed to share. Please try again.";
+      alert(errorMessage);
     } finally {
       setIsSharing(false);
     }
