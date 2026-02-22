@@ -5,10 +5,6 @@ import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  /*
-   * Playwright starts the dev server and requires a 200 status to
-   * begin the tests, so this ensures that the tests can start
-   */
   if (pathname.startsWith("/ping")) {
     return new Response("pong", { status: 200 });
   }
@@ -17,12 +13,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for required environment variables
   if (!process.env.AUTH_SECRET) {
-    console.error(
-      "❌ Missing AUTH_SECRET environment variable. Please check your .env file.",
-    );
-    return NextResponse.next(); // Let the app handle the error with better UI
+    if (isDevelopmentEnvironment) {
+      process.env.AUTH_SECRET = "dev-secret-key-not-for-production";
+    } else {
+      console.error(
+        "❌ Missing AUTH_SECRET environment variable. Please check your .env file.",
+      );
+      return NextResponse.next();
+    }
   }
 
   const token = await getToken({
