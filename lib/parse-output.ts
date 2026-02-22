@@ -166,7 +166,7 @@ function sanitizeHead(head: string): string {
 
 const PLACEHOLDER_CSS = /^(leave empty\.?|output nothing\.?|nothing\.?)$/i;
 const INSTRUCTION_CSS =
-  /^(leave empty\.?\s*)?(daisyui and tailwind are pre-loaded|use tailwind utility classes).*/is;
+  /^(leave empty\.?\s*)?(daisyui and tailwind are pre-loaded|use tailwind utility classes)[\s\S]*/i;
 
 function sanitizeCss(css: string): string {
   const trimmed = css.trim();
