@@ -48,7 +48,7 @@ export function JimmyStreamingMessage({
         onComplete(text, stats);
 
         const { react } = parseStructuredOutput(text);
-        if (react && !isCancelled && onPreviewReady) {
+        if (react && react.trim() && !isCancelled && onPreviewReady) {
           if (chatId) {
             (async () => {
               try {
@@ -58,10 +58,15 @@ export function JimmyStreamingMessage({
                   body: JSON.stringify({ reactCode: react }),
                 });
 
-                if (response.ok && !isCancelled) {
-                  onPreviewReady(react);
-                } else if (!isCancelled) {
-                  onPreviewReady(react);
+                if (!isCancelled) {
+                  if (response.ok) {
+                    onPreviewReady(react);
+                  } else {
+                    console.warn(
+                      "Failed to save React code, but using it anyway",
+                    );
+                    onPreviewReady(react);
+                  }
                 }
               } catch (error) {
                 console.warn("Failed to save React code to database:", error);
