@@ -62,11 +62,12 @@ Row with icon: <span class="flex items-center gap-2"><i data-lucide="check" clas
 
 const DEFAULT_POLISH = `
 ## Default polish (always apply)
-- Cards: shadow-xl rounded-box (never flat)
-- Buttons: include icons where it helps (plus for add, trash-2 for delete)
-- Lists: space-y-2 or space-y-3, each item with padding and shadow
-- Empty states: show a subtle message when list is empty
-- Consistent gaps: gap-2 (tight), gap-4 (sections)
+- Cards: shadow-xl rounded-box (never flat). Use bg-base-100 on cards.
+- Buttons: include icons where it helps (plus for add, trash-2 for delete, check for done)
+- Lists: space-y-2 or space-y-3, each item with p-3/p-4, rounded-lg, shadow or bg-base-100
+- Empty states: when list has no items, show <p class="text-base-content/60 text-sm py-8 text-center">No items yet. Add one above.</p> inside the container
+- Gaps: gap-2 (icon+text), gap-4 (sections), p-6 (card-body)
+- Visual hierarchy: card-title for headings, text-sm opacity-70 for secondary text
 `;
 
 const HANDLEBARS_RULES = `
@@ -90,7 +91,7 @@ Put {{#each}}, {{name}}, {{#if}} INSIDE the script tag only.
 
 ### Full example
 ===HTML===
-<main class="max-w-2xl mx-auto p-8">
+<main class="max-w-2xl mx-auto p-6 sm:p-8">
   <div class="navbar bg-base-100 rounded-lg shadow-lg mb-6">
     <div class="navbar-start"><img src="/next.svg" alt="Logo" class="h-8 w-8" /></div>
     <div class="navbar-end gap-2">
@@ -106,7 +107,7 @@ Put {{#each}}, {{name}}, {{#if}} INSIDE the script tag only.
       </div>
     </div>
   </div>
-  <ul id="task-list" class="mt-4 space-y-2"></ul>
+  <ul id="task-list" class="mt-4 space-y-2 min-h-16"></ul>
   <script type="text/x-handlebars-template" id="task-tpl">
 {{#each tasks}}
 <li class="flex items-center gap-3 p-3 bg-base-100 rounded-lg shadow">
@@ -121,7 +122,8 @@ Put {{#each}}, {{name}}, {{#if}} INSIDE the script tag only.
 let tasks = JSON.parse(localStorage.getItem("tasks")||"[]");
 function render(){
   const tpl = document.getElementById("task-tpl").innerHTML;
-  document.getElementById("task-list").innerHTML = Handlebars.compile(tpl)({tasks});
+  const html = tasks.length ? Handlebars.compile(tpl)({tasks}) : '<p class="text-base-content/60 text-sm py-8 text-center">No tasks yet. Add one above.</p>';
+  document.getElementById("task-list").innerHTML = html;
   if(typeof lucide!=='undefined') lucide.createIcons();
 }
 render();
@@ -137,15 +139,15 @@ Output ONLY these blocks. No text outside. End with last char of ===JS===.
 ===HEAD===
 [Optional. Only if different fonts. Never <link href="/next.svg">.]
 ===HTML===
-[Body. Include: (1) empty container, (2) <script type="text/x-handlebars-template" id="x-tpl"> with {{#each}} inside. Use DaisyUI: btn, card, input, navbar.]
+[Body. Include: (1) empty container, (2) <script type="text/x-handlebars-template" id="x-tpl"> with {{#each}} inside. Use DaisyUI: btn, card, input, navbar. Add empty-state message when list is empty.]
 ===JS===
-[Compile template, render, lucide.createIcons() in render(), localStorage, call render() at end.]
+[Compile template, render with empty-state fallback when data.length===0, lucide.createIcons() in render(), localStorage, call render() at end.]
 
 Rules: No full HTML doc. Logo: /next.svg. Data: localStorage. No React/Vue/Svelte. STOP after last JS line.
 `;
 
 export function getSystemPrompt(): string {
-  return `You are a UI generator. Output ONLY ===RESPONSE===, ===HEAD=== (optional), ===HTML===, ===JS===.
+  return `You are a UI generator. Produce polished, professional UIs by default. Output ONLY ===RESPONSE===, ===HEAD=== (optional), ===HTML===, ===JS===.
 
 ${COMPONENT_LIBRARY}
 
