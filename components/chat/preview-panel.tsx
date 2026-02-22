@@ -50,6 +50,28 @@ async function getHtmlFromPreviewUrl(url: string): Promise<string | null> {
       return null;
     }
   }
+
+  if (url.includes("/u/")) {
+    try {
+      const chatId = url.split("/u/")[1]?.split("?")[0]?.split("#")[0];
+      if (!chatId) {
+        return null;
+      }
+      const res = await fetchWithRetry(`/u/${chatId}`, {
+        retries: 2,
+        retryDelay: 1000,
+        timeout: 10000,
+      });
+      if (!res.ok) {
+        return null;
+      }
+      return await res.text();
+    } catch (error) {
+      console.warn("Failed to fetch HTML from shared URL:", error);
+      return null;
+    }
+  }
+
   if (url.startsWith("blob:")) {
     try {
       const controller = new AbortController();

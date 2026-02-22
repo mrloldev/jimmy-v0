@@ -81,6 +81,7 @@ export function ChatDetailClient() {
               onStreamingComplete={handleStreamingComplete}
               onPreviewReady={handlePreviewReady}
               onStreamingStarted={() => setIsLoading(false)}
+              chatId={chatId}
             />
 
             <ChatInput

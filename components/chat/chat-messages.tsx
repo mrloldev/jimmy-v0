@@ -1,19 +1,19 @@
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef } from "react";
 import {
+  Conversation,
+  ConversationContent,
+} from "@/components/ai-elements/conversation";
+import { Loader } from "@/components/ai-elements/loader";
+import { Message, MessageContent } from "@/components/ai-elements/message";
+import { JimmyStreamingMessage } from "@/components/chat/jimmy-streaming-message";
+import { MessageStats } from "@/components/chat/message-stats";
+import { MessageRenderer } from "@/components/message-renderer";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  Conversation,
-  ConversationContent,
-} from "@/components/ai-elements/conversation";
-import { JimmyStreamingMessage } from "@/components/chat/jimmy-streaming-message";
-import { Loader } from "@/components/ai-elements/loader";
-import { Message, MessageContent } from "@/components/ai-elements/message";
-import { MessageRenderer } from "@/components/message-renderer";
-import { MessageStats } from "@/components/chat/message-stats";
 
 export interface ChatMessage {
   type: "user" | "assistant";
@@ -33,6 +33,7 @@ interface ChatMessagesProps {
   ) => void;
   onPreviewReady?: (dataUrl: string) => void;
   onStreamingStarted?: () => void;
+  chatId?: string;
 }
 
 export function ChatMessages({
@@ -41,6 +42,7 @@ export function ChatMessages({
   onStreamingComplete,
   onPreviewReady,
   onStreamingStarted,
+  chatId,
 }: ChatMessagesProps) {
   const streamingStartedRef = useRef(false);
 
@@ -68,12 +70,12 @@ export function ChatMessages({
             <MessageContent className="flex flex-col gap-2">
               {msg.plan && (
                 <Collapsible defaultOpen={false} className="w-full">
-                  <CollapsibleTrigger className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted/50">
+                  <CollapsibleTrigger className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left font-medium text-muted-foreground text-xs hover:bg-muted/50">
                     <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]_&]:rotate-90" />
                     Plan
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-muted/30 p-3 text-xs whitespace-pre-wrap font-sans">
+                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/30 p-3 font-sans text-xs">
                       {msg.plan}
                     </pre>
                   </CollapsibleContent>
@@ -84,6 +86,7 @@ export function ChatMessages({
                   stream={msg.stream}
                   onComplete={onStreamingComplete}
                   onPreviewReady={onPreviewReady}
+                  chatId={chatId}
                   onChunk={() => {
                     if (onStreamingStarted && !streamingStartedRef.current) {
                       streamingStartedRef.current = true;
