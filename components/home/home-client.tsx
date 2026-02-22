@@ -452,7 +452,7 @@ export function HomeClient() {
                 onStreamingComplete={handleStreamingComplete}
                 onPreviewReady={handlePreviewReady}
                 onStreamingStarted={() => setIsLoading(false)}
-                chatId={currentChatId}
+                chatId={currentChatId ?? undefined}
               />
 
               <ChatInput
