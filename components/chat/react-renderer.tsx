@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { buildFullDocument } from "@/lib/parse-output";
 
 interface ReactRendererProps {
   reactCode: string;
@@ -24,44 +25,10 @@ export function ReactRenderer({ reactCode, className }: ReactRendererProps) {
     }
 
     try {
-      const htmlContent = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
-  <style>
-    body { min-height: 100vh; -webkit-font-smoothing: antialiased; font-family: 'DM Sans', system-ui, sans-serif; }
-    input, button, select, textarea { font: inherit; }
-    input:focus, button:focus { outline: none; }
-  </style>
-  <title>Preview</title>
-</head>
-<body data-theme="cupcake" class="min-h-screen bg-base-200">
-  <div id="root"></div>
-  <script type="text/babel">
-    const { useState, useEffect } = React;
-    const lucide = typeof window !== "undefined" && window.lucide ? window.lucide : { createIcons: function() {} };
-    const LucideIcon = ({ name, icon, size, className, ...props }) => React.createElement("i", { "data-lucide": name || icon, className, ...props });
-    ${reactCode}
-  </script>
-  <script>
-    if (typeof window !== "undefined" && window.lucide) {
-      window.lucide.createIcons();
-    }
-  </script>
-</body>
-</html>`;
+      const fullHtml = buildFullDocument(reactCode);
 
       doc.open();
-      doc.write(htmlContent);
+      doc.write(fullHtml);
       doc.close();
       setError(null);
     } catch (err) {
