@@ -1,8 +1,15 @@
 import "server-only";
 
 import { and, count, desc, eq, gte } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import db from "./connection";
-import { chat_ownerships, type User, users } from "./schema";
+import {
+  chat_demos,
+  chat_ownerships,
+  type ChatDemo,
+  type User,
+  users,
+} from "./schema";
 import { generateHashedPassword } from "./utils";
 
 /**
@@ -143,5 +150,38 @@ export async function getChatCountByUserId({
   } catch (error) {
     console.error("Failed to get chat count by user from database");
     throw error;
+  }
+}
+
+export async function upsertChatDemo(
+  chatId: string,
+  html: string,
+): Promise<ChatDemo | null> {
+  try {
+    const [row] = await getDb()
+      .insert(chat_demos)
+      .values({ chat_id: chatId, html })
+      .onConflictDoUpdate({
+        target: chat_demos.chat_id,
+        set: { html },
+      })
+      .returning();
+    return row ?? null;
+  } catch (error) {
+    console.error("Failed to upsert chat demo");
+    return null;
+  }
+}
+
+export async function getChatDemo(chatId: string): Promise<ChatDemo | null> {
+  try {
+    const [row] = await getDb()
+      .select()
+      .from(chat_demos)
+      .where(eq(chat_demos.chat_id, chatId));
+    return row ?? null;
+  } catch (error) {
+    console.error("Failed to get chat demo");
+    return null;
   }
 }

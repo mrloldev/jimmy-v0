@@ -83,12 +83,14 @@ export const Suggestions = ({
 };
 
 export type SuggestionProps = Omit<ComponentProps<typeof Button>, "onClick"> & {
-  suggestion: string;
-  onClick?: (suggestion: string) => void;
+  label: string;
+  prompt: string;
+  onClick?: (prompt: string) => void;
 };
 
 export const Suggestion = ({
-  suggestion,
+  label,
+  prompt,
   onClick,
   className,
   variant = "outline",
@@ -97,7 +99,7 @@ export const Suggestion = ({
   ...props
 }: SuggestionProps) => {
   const handleClick = () => {
-    onClick?.(suggestion);
+    onClick?.(prompt);
   };
 
   return (
@@ -107,9 +109,10 @@ export const Suggestion = ({
       size={size}
       type="button"
       variant={variant}
+      title={prompt}
       {...props}
     >
-      {children || suggestion}
+      {children ?? label}
     </Button>
   );
 };

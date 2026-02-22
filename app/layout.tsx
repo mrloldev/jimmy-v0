@@ -2,15 +2,15 @@ import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import type { Metadata } from "next";
 import "./globals.css";
-import { SessionProvider } from "@/components/providers/session-provider";
 import { SWRProvider } from "@/components/providers/swr-provider";
 import { ThemeProvider } from "@/components/providers/theme-provider";
+import { ModelProvider } from "@/contexts/model-context";
 import { StreamingProvider } from "@/contexts/streaming-context";
 
 export const metadata: Metadata = {
-  title: "v0.diy - AI for Developers",
+  title: "Jimmy - AI for Developers",
   description:
-    "A clone of v0.app built with the v0 SDK - Generate and preview React components with AI",
+    "Generate and preview UIs with AI. Built with ChatJimmy and Llama.",
 };
 
 export default function RootLayout({
@@ -27,11 +27,11 @@ export default function RootLayout({
     >
       <body className="antialiased">
         <ThemeProvider>
-          <SessionProvider>
-            <SWRProvider>
-              <StreamingProvider>{children}</StreamingProvider>
-            </SWRProvider>
-          </SessionProvider>
+          <SWRProvider>
+            <ModelProvider>
+            <StreamingProvider>{children}</StreamingProvider>
+          </ModelProvider>
+          </SWRProvider>
         </ThemeProvider>
       </body>
     </html>

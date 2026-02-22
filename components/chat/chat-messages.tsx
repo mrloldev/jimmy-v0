@@ -1,33 +1,37 @@
-import { type MessageBinaryFormat, StreamingMessage } from "@v0-sdk/react";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useRef } from "react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Conversation,
   ConversationContent,
 } from "@/components/ai-elements/conversation";
+import { JimmyStreamingMessage } from "@/components/chat/jimmy-streaming-message";
 import { Loader } from "@/components/ai-elements/loader";
-import { Message } from "@/components/ai-elements/message";
+import { Message, MessageContent } from "@/components/ai-elements/message";
 import { MessageRenderer } from "@/components/message-renderer";
-import { sharedComponents } from "@/components/shared-components";
+import { MessageStats } from "@/components/chat/message-stats";
 
-interface ChatMessage {
+export interface ChatMessage {
   type: "user" | "assistant";
-  content: string | MessageBinaryFormat;
+  content: string;
   isStreaming?: boolean;
   stream?: ReadableStream<Uint8Array> | null;
-}
-
-interface Chat {
-  id: string;
-  demo?: string;
-  url?: string;
+  stats?: Record<string, unknown> | null;
+  plan?: string;
 }
 
 interface ChatMessagesProps {
   chatHistory: ChatMessage[];
   isLoading: boolean;
-  currentChat: Chat | null;
-  onStreamingComplete: (finalContent: string | MessageBinaryFormat) => void;
-  onChatData: (chatData: { id: string; demo?: string; url?: string }) => void;
+  onStreamingComplete: (
+    finalContent: string,
+    stats?: Record<string, unknown> | null,
+  ) => void;
+  onPreviewReady?: (dataUrl: string) => void;
   onStreamingStarted?: () => void;
 }
 
@@ -35,12 +39,11 @@ export function ChatMessages({
   chatHistory,
   isLoading,
   onStreamingComplete,
-  onChatData,
+  onPreviewReady,
   onStreamingStarted,
-}: Omit<ChatMessagesProps, "currentChat">) {
+}: ChatMessagesProps) {
   const streamingStartedRef = useRef(false);
 
-  // Reset the streaming started flag when a new message starts loading
   useEffect(() => {
     if (isLoading) {
       streamingStartedRef.current = false;
@@ -51,9 +54,7 @@ export function ChatMessages({
     return (
       <Conversation>
         <ConversationContent>
-          <div>
-            {/* Empty conversation - messages will appear here when they load */}
-          </div>
+          <div />
         </ConversationContent>
       </Conversation>
     );
@@ -64,31 +65,44 @@ export function ChatMessages({
       <ConversationContent>
         {chatHistory.map((msg, index) => (
           <Message from={msg.type} key={`message-${index}-${msg.type}`}>
-            {msg.isStreaming && msg.stream ? (
-              <StreamingMessage
-                stream={msg.stream}
-                messageId={`msg-${index}`}
-                role={msg.type}
-                onComplete={onStreamingComplete}
-                onChatData={onChatData}
-                onChunk={(_chunk) => {
-                  // Hide external loader once we start receiving content (only once)
-                  if (onStreamingStarted && !streamingStartedRef.current) {
-                    streamingStartedRef.current = true;
-                    onStreamingStarted();
-                  }
-                }}
-                onError={(error) => console.error("Streaming error:", error)}
-                components={sharedComponents}
-                showLoadingIndicator={false}
-              />
-            ) : (
-              <MessageRenderer
-                content={msg.content}
-                role={msg.type}
-                messageId={`msg-${index}`}
-              />
-            )}
+            <MessageContent className="flex flex-col gap-2">
+              {msg.plan && (
+                <Collapsible defaultOpen={false} className="w-full">
+                  <CollapsibleTrigger className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted/50">
+                    <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]_&]:rotate-90" />
+                    Plan
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-muted/30 p-3 text-xs whitespace-pre-wrap font-sans">
+                      {msg.plan}
+                    </pre>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+              {msg.isStreaming && msg.stream ? (
+                <JimmyStreamingMessage
+                  stream={msg.stream}
+                  onComplete={onStreamingComplete}
+                  onPreviewReady={onPreviewReady}
+                  onChunk={() => {
+                    if (onStreamingStarted && !streamingStartedRef.current) {
+                      streamingStartedRef.current = true;
+                      onStreamingStarted();
+                    }
+                  }}
+                  onError={(error) => console.error("Streaming error:", error)}
+                />
+              ) : msg.content ? (
+                <MessageRenderer
+                  content={msg.content}
+                  role={msg.type}
+                  messageId={`msg-${index}`}
+                />
+              ) : null}
+              {msg.type === "assistant" && msg.stats && !msg.isStreaming && (
+                <MessageStats stats={msg.stats} />
+              )}
+            </MessageContent>
           </Message>
         ))}
         {isLoading && (

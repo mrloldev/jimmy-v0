@@ -33,7 +33,7 @@ export function ChatDetailClient() {
     isLoadingChat,
     handleSendMessage,
     handleStreamingComplete,
-    handleChatData,
+    handlePreviewReady,
   } = useChat(chatId);
 
   // Wrapper function to handle attachments
@@ -79,7 +79,7 @@ export function ChatDetailClient() {
               chatHistory={chatHistory}
               isLoading={isLoading}
               onStreamingComplete={handleStreamingComplete}
-              onChatData={handleChatData}
+              onPreviewReady={handlePreviewReady}
               onStreamingStarted={() => setIsLoading(false)}
             />
 

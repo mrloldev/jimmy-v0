@@ -1,10 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { auth } from "@/app/(auth)/auth";
-import { createChatOwnership } from "@/lib/db/queries";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
     const { chatId } = await request.json();
 
     if (!chatId) {
@@ -13,19 +10,6 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-
-    // Require authentication
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Authentication required" },
-        { status: 401 },
-      );
-    }
-
-    await createChatOwnership({
-      v0ChatId: chatId,
-      userId: session.user.id,
-    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

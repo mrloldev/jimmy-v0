@@ -50,9 +50,11 @@ export interface ChatMessageData {
 
 export interface ChatMessage {
   type: "user" | "assistant";
-  content: string | MessageBinaryFormat;
+  content: string;
   isStreaming?: boolean;
   stream?: ReadableStream<Uint8Array> | null;
+  stats?: Record<string, unknown> | null;
+  plan?: string;
 }
 
 export interface ChatData {

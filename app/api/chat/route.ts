@@ -1,121 +1,111 @@
 import { type NextRequest, NextResponse } from "next/server";
-import type { Session } from "next-auth";
-import { type ChatDetail, createClient } from "v0-sdk";
-import { auth } from "@/app/(auth)/auth";
-import { createChatOwnership, getChatCountByUserId } from "@/lib/db/queries";
-import { userEntitlements } from "@/lib/entitlements";
-import { ChatSDKError } from "@/lib/errors";
+import { BOT_ID, ensureMessageIds, toApiMessages } from "@/lib/chat-ids";
+import { getSystemPrompt } from "@/lib/skills/frontend-design";
 
-const v0 = createClient(
-  process.env.V0_API_URL ? { baseUrl: process.env.V0_API_URL } : {},
-);
-
-const STREAMING_HEADERS = {
-  "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache",
-  Connection: "keep-alive",
-} as const;
-
-async function checkRateLimit(
-  session: Session | null,
-): Promise<Response | null> {
-  // Require authentication
-  if (!session?.user?.id) {
-    return new ChatSDKError("unauthorized:chat").toResponse();
-  }
-
-  const chatCount = await getChatCountByUserId({
-    userId: session.user.id,
-    differenceInHours: 24,
-  });
-
-  if (chatCount >= userEntitlements.maxMessagesPerDay) {
-    return new ChatSDKError("rate_limit:chat").toResponse();
-  }
-
-  return null;
-}
-
-function createStreamingResponse(stream: ReadableStream<Uint8Array>): Response {
-  return new Response(stream, { headers: STREAMING_HEADERS });
-}
-
-async function recordChatOwnership(
-  chatId: string,
-  session: Session | null,
-): Promise<void> {
-  try {
-    if (session?.user?.id) {
-      await createChatOwnership({ v0ChatId: chatId, userId: session.user.id });
-    }
-  } catch (error) {
-    console.error("Failed to create chat ownership:", error);
-  }
-}
-
-function formatChatResponse(chatDetail: ChatDetail) {
-  return NextResponse.json({
-    id: chatDetail.id,
-    demo: chatDetail.demo,
-    messages: chatDetail.messages?.map((msg) => ({
-      ...msg,
-      experimental_content: (
-        msg as typeof msg & { experimental_content?: unknown }
-      ).experimental_content,
-    })),
-  });
-}
+const CHATJIMMY_URL = "https://chatjimmy.ai/api/chat";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
-    const { message, chatId, streaming, attachments } = await request.json();
+    const body = await request.json();
+    const {
+      messages,
+      message,
+      chatId,
+      streaming,
+      attachments,
+      botId,
+      model = "llama3.1-70b",
+      plan,
+    } = body;
 
-    if (!message) {
+    const validModels = ["llama3.1-8b", "llama3.1-70b"];
+    const selectedModel = validModels.includes(model) ? model : "llama3.1-70b";
+
+    const isLegacyFormat = !Array.isArray(messages) && typeof message === "string";
+    let apiMessages = isLegacyFormat
+      ? toApiMessages(
+          ensureMessageIds([{ role: "user", content: message as string }]),
+        )
+      : toApiMessages(ensureMessageIds(messages ?? []));
+
+    if (plan && typeof plan === "string" && plan.trim()) {
+      const lastIdx = apiMessages.length - 1;
+      const last = apiMessages[lastIdx];
+      if (last?.role === "user") {
+        const enhanced = `[PLAN]\n${plan.trim()}\n[/PLAN]\n\nOriginal request: ${last.content}`;
+        apiMessages = [...apiMessages];
+        apiMessages[lastIdx] = { ...last, content: enhanced };
+      }
+    }
+
+    if (!isLegacyFormat && botId !== BOT_ID) {
       return NextResponse.json(
-        { error: "Message is required" },
+        { error: "Invalid or missing bot id" },
         { status: 400 },
       );
     }
 
-    const rateLimitResponse = await checkRateLimit(session);
-    if (rateLimitResponse) {
-      return rateLimitResponse;
+    if (apiMessages.length === 0) {
+      return NextResponse.json(
+        { error: "message or messages is required" },
+        { status: 400 },
+      );
     }
 
-    const attachmentOptions =
-      attachments && attachments.length > 0 ? { attachments } : {};
+    const systemPrompt = getSystemPrompt();
 
-    let chat: ChatDetail | ReadableStream<Uint8Array> | null = null;
+    const chatJimmyBody = {
+      messages: apiMessages,
+      ...(chatId && { chatId }),
+      chatOptions: {
+        selectedModel,
+        systemPrompt,
+        topK: 8,
+        temperature: 0.3,
+      },
+      attachment: attachments?.[0] ?? null,
+      ...(isLegacyFormat && { botId: BOT_ID }),
+    };
 
-    if (chatId) {
-      chat = await v0.chats.sendMessage({
-        chatId,
-        message,
-        ...(streaming && { responseMode: "experimental_stream" }),
-        ...attachmentOptions,
-      });
-    } else {
-      chat = await v0.chats.create({
-        message,
-        responseMode: streaming ? "experimental_stream" : "sync",
-        ...attachmentOptions,
-      });
+    const response = await fetch(CHATJIMMY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "*/*",
+        Origin: request.nextUrl.origin,
+        Referer: request.nextUrl.origin + "/",
+        "User-Agent":
+          request.headers.get("user-agent") ??
+          "Mozilla/5.0 (compatible; Jimmy/1.0)",
+      },
+      body: JSON.stringify(chatJimmyBody),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("ChatJimmy API error:", response.status, text);
+      return NextResponse.json(
+        { error: "Failed to process request", details: text },
+        { status: response.status },
+      );
     }
 
-    if (chat instanceof ReadableStream) {
-      return createStreamingResponse(chat);
+    if (!response.body) {
+      return NextResponse.json(
+        { error: "No response body" },
+        { status: 500 },
+      );
     }
 
-    const chatDetail = chat as ChatDetail;
-
-    if (!chatId && chatDetail.id) {
-      await recordChatOwnership(chatDetail.id, session);
-    }
-
-    return formatChatResponse(chatDetail);
+    return new Response(response.body, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (error) {
-    console.error("V0 API Error:", error);
+    console.error("Chat API Error:", error);
     return NextResponse.json(
       {
         error: "Failed to process request",

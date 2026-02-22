@@ -5,20 +5,15 @@ export interface MissingEnvVar {
   required: boolean;
 }
 
+const PLACEHOLDERS = ["v0_sk_...", "your-secret-key-here", "your_v0_api_key_here"];
+
+function isValid(value: string | undefined): boolean {
+  const v = (value ?? "").trim();
+  return !!v && !PLACEHOLDERS.includes(v);
+}
+
 export function checkRequiredEnvVars(): MissingEnvVar[] {
   const requiredVars: MissingEnvVar[] = [
-    {
-      name: "V0_API_KEY",
-      description: "Your v0 API key for generating apps",
-      example: "v0_sk_...",
-      required: true,
-    },
-    {
-      name: "AUTH_SECRET",
-      description: "Secret key for NextAuth.js authentication",
-      example: "your-secret-key-here",
-      required: true,
-    },
     {
       name: "POSTGRES_URL",
       description: "PostgreSQL database connection string",
@@ -27,10 +22,9 @@ export function checkRequiredEnvVars(): MissingEnvVar[] {
     },
   ];
 
-  const missing = requiredVars.filter((envVar) => {
-    const value = process.env[envVar.name];
-    return !value || value.trim() === "";
-  });
+  const missing = requiredVars.filter(
+    (envVar) => !isValid(process.env[envVar.name]),
+  );
 
   return missing;
 }
@@ -39,8 +33,4 @@ export function hasAllRequiredEnvVars(): boolean {
   return checkRequiredEnvVars().length === 0;
 }
 
-export const hasEnvVars = !!(
-  process.env.V0_API_KEY &&
-  process.env.AUTH_SECRET &&
-  process.env.POSTGRES_URL
-);
+export const hasEnvVars = !!isValid(process.env.POSTGRES_URL);

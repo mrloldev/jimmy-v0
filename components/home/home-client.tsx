@@ -1,10 +1,8 @@
 "use client";
 
-import type { MessageBinaryFormat } from "@v0-sdk/react";
-import { StreamingMessage } from "@v0-sdk/react";
+import { JimmyStreamingMessage } from "@/components/chat/jimmy-streaming-message";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import {
   clearPromptFromStorage,
@@ -23,12 +21,15 @@ import {
   savePromptToStorage,
 } from "@/components/ai-elements/prompt-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
+import { ModelSwitcher } from "@/components/shared/model-switcher";
+import { useModel } from "@/contexts/model-context";
+import { SUGGESTIONS } from "@/lib/suggestions";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { PreviewPanel } from "@/components/chat/preview-panel";
 import { AppHeader } from "@/components/shared/app-header";
 import { ResizableLayout } from "@/components/shared/resizable-layout";
-import type { ChatData } from "@/types/chat";
+import { nanoid } from "nanoid";
 
 // Component that uses useSearchParams - needs to be wrapped in Suspense
 function SearchParamsHandler({ onReset }: { onReset: () => void }) {
@@ -51,8 +52,7 @@ function SearchParamsHandler({ onReset }: { onReset: () => void }) {
 }
 
 export function HomeClient() {
-  const { status } = useSession();
-  const router = useRouter();
+  const { model, useCoT } = useModel();
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showChatInterface, setShowChatInterface] = useState(false);
@@ -61,9 +61,11 @@ export function HomeClient() {
   const [chatHistory, setChatHistory] = useState<
     Array<{
       type: "user" | "assistant";
-      content: string | MessageBinaryFormat;
+      content: string;
       isStreaming?: boolean;
       stream?: ReadableStream<Uint8Array> | null;
+      stats?: Record<string, unknown> | null;
+      plan?: string;
     }>
   >([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
@@ -182,13 +184,6 @@ export function HomeClient() {
       return;
     }
 
-    // Require authentication before sending messages
-    if (status !== "authenticated") {
-      // Message is already saved to sessionStorage via useEffect
-      router.push("/login?callbackUrl=/");
-      return;
-    }
-
     const userMessage = message.trim();
     const currentAttachments = [...attachments];
 
@@ -198,8 +193,11 @@ export function HomeClient() {
     setMessage("");
     setAttachments([]);
 
-    // Immediately show chat interface and add user message
+    const newId = nanoid();
+    setCurrentChatId(newId);
+    setCurrentChat({ id: newId });
     setShowChatInterface(true);
+    window.history.pushState(null, "", `/chats/${newId}`);
     setChatHistory([
       {
         type: "user",
@@ -209,16 +207,38 @@ export function HomeClient() {
     setIsLoading(true);
 
     try {
+      let plan: string | undefined;
+      if (useCoT) {
+        const planRes = await fetch("/api/chat/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: userMessage }),
+        });
+        if (!planRes.ok) {
+          const err = await getErrorMessage(planRes);
+          throw new Error(err);
+        }
+        const planData = await planRes.json();
+        plan = planData.plan ?? "";
+        setChatHistory((prev) => [
+          ...prev,
+          { type: "assistant", content: "", plan },
+        ]);
+      }
+
+      const chatBody: Record<string, unknown> = {
+        message: userMessage,
+        chatId: newId,
+        streaming: true,
+        model,
+        attachments: currentAttachments.map((att) => ({ url: att.dataUrl })),
+      };
+      if (plan) chatBody.plan = plan;
+
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: userMessage,
-          streaming: true,
-          attachments: currentAttachments.map((att) => ({ url: att.dataUrl })),
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(chatBody),
       });
 
       if (!response.ok) {
@@ -232,16 +252,24 @@ export function HomeClient() {
 
       setIsLoading(false);
 
-      // Add streaming assistant response
-      setChatHistory((prev) => [
-        ...prev,
-        {
-          type: "assistant",
-          content: [],
-          isStreaming: true,
-          stream: response.body,
-        },
-      ]);
+      setChatHistory((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.type === "assistant" && last.plan && !last.stream) {
+          return [
+            ...prev.slice(0, -1),
+            { ...last, isStreaming: true, stream: response.body },
+          ];
+        }
+        return [
+          ...prev,
+          {
+            type: "assistant",
+            content: "",
+            isStreaming: true,
+            stream: response.body,
+          },
+        ];
+      });
     } catch (error) {
       console.error("Error creating chat:", error);
       setIsLoading(false);
@@ -262,102 +290,41 @@ export function HomeClient() {
     }
   };
 
-  const handleChatData = async (chatData: ChatData) => {
-    if (chatData.id) {
-      // Only set currentChat if it's not already set or if this is the main chat object
-      if (!currentChatId || chatData.object === "chat") {
-        setCurrentChatId(chatData.id);
-        setCurrentChat({ id: chatData.id });
-
-        // Update URL without triggering Next.js routing
-        window.history.pushState(null, "", `/chats/${chatData.id}`);
-      }
-
-      // Create ownership record for new chat (only if this is a new chat)
-      if (!currentChatId) {
-        try {
-          await fetch("/api/chat/ownership", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              chatId: chatData.id,
-            }),
-          });
-        } catch (error) {
-          console.error("Failed to create chat ownership:", error);
-          // Don't fail the UI if ownership creation fails
-        }
-      }
-    }
-  };
-
   const handleStreamingComplete = async (
-    finalContent: string | MessageBinaryFormat,
+    finalContent: string,
+    stats?: Record<string, unknown> | null,
   ) => {
     setIsLoading(false);
+    const { parseStructuredOutput } = await import("@/lib/parse-output");
+    const { userResponse } = parseStructuredOutput(finalContent);
+    const displayContent = userResponse || finalContent;
 
-    // Update chat history with final content
     setChatHistory((prev) => {
       const updated = [...prev];
       const lastIndex = updated.length - 1;
       if (lastIndex >= 0 && updated[lastIndex].isStreaming) {
         updated[lastIndex] = {
           ...updated[lastIndex],
-          content: finalContent,
+          content: displayContent,
           isStreaming: false,
           stream: undefined,
+          stats: stats ?? undefined,
         };
       }
       return updated;
     });
+  };
 
-    // Fetch demo URL after streaming completes
-    // Use the current state by accessing it in the state updater
-    setCurrentChat((prevCurrentChat) => {
-      if (prevCurrentChat?.id) {
-        // Fetch demo URL asynchronously
-        fetch(`/api/chats/${prevCurrentChat.id}`)
-          .then((response) => {
-            if (response.ok) {
-              return response.json();
-            }
-            console.warn("Failed to fetch chat details:", response.status);
-            return null;
-          })
-          .then((chatDetails) => {
-            if (chatDetails) {
-              const demoUrl =
-                chatDetails?.latestVersion?.demoUrl || chatDetails?.demo;
-
-              // Update the current chat with demo URL
-              if (demoUrl) {
-                setCurrentChat((prev) =>
-                  prev ? { ...prev, demo: demoUrl } : null,
-                );
-              }
-            }
-          })
-          .catch((error) => {
-            console.error("Error fetching demo URL:", error);
-          });
-      }
-
-      // Return the current state unchanged for now
-      return prevCurrentChat;
-    });
+  const handlePreviewReady = (dataUrl: string) => {
+    setCurrentChat((prev) =>
+      prev ? { ...prev, demo: dataUrl } : { id: nanoid(), demo: dataUrl },
+    );
+    setRefreshKey((k) => k + 1);
   };
 
   const handleChatSendMessage = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!message.trim() || isLoading || !currentChatId) {
-      return;
-    }
-
-    // Require authentication before sending messages
-    if (status !== "authenticated") {
-      router.push("/login?callbackUrl=/");
+    if (!message.trim() || isLoading) {
       return;
     }
 
@@ -365,20 +332,40 @@ export function HomeClient() {
     setMessage("");
     setIsLoading(true);
 
-    // Add user message to chat history
     setChatHistory((prev) => [...prev, { type: "user", content: userMessage }]);
 
     try {
+      let plan: string | undefined;
+      if (useCoT) {
+        const planRes = await fetch("/api/chat/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: userMessage }),
+        });
+        if (!planRes.ok) {
+          const err = await getErrorMessage(planRes);
+          throw new Error(err);
+        }
+        const planData = await planRes.json();
+        plan = planData.plan ?? "";
+        setChatHistory((prev) => [
+          ...prev,
+          { type: "assistant", content: "", plan },
+        ]);
+      }
+
+      const chatBody: Record<string, unknown> = {
+        message: userMessage,
+        chatId: currentChatId ?? undefined,
+        streaming: true,
+        model,
+      };
+      if (plan) chatBody.plan = plan;
+
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: userMessage,
-          chatId: currentChatId,
-          streaming: true,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(chatBody),
       });
 
       if (!response.ok) {
@@ -392,16 +379,24 @@ export function HomeClient() {
 
       setIsLoading(false);
 
-      // Add streaming response
-      setChatHistory((prev) => [
-        ...prev,
-        {
-          type: "assistant",
-          content: [],
-          isStreaming: true,
-          stream: response.body,
-        },
-      ]);
+      setChatHistory((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.type === "assistant" && last.plan && !last.stream) {
+          return [
+            ...prev.slice(0, -1),
+            { ...last, isStreaming: true, stream: response.body },
+          ];
+        }
+        return [
+          ...prev,
+          {
+            type: "assistant",
+            content: "",
+            isStreaming: true,
+            stream: response.body,
+          },
+        ];
+      });
     } catch (error) {
       console.error("Error:", error);
 
@@ -435,12 +430,12 @@ export function HomeClient() {
         <ResizableLayout
           className="h-[calc(100vh-64px)]"
           leftPanel={
-            <>
+            <div className="flex h-full flex-col bg-gradient-to-b from-muted/40 via-background to-muted/30 dark:from-muted/20 dark:via-background dark:to-muted/15">
               <ChatMessages
                 chatHistory={chatHistory}
                 isLoading={isLoading}
                 onStreamingComplete={handleStreamingComplete}
-                onChatData={handleChatData}
+                onPreviewReady={handlePreviewReady}
                 onStreamingStarted={() => setIsLoading(false)}
               />
 
@@ -451,7 +446,7 @@ export function HomeClient() {
                 isLoading={isLoading}
                 showSuggestions={false}
               />
-            </>
+            </div>
           }
           rightPanel={
             <PreviewPanel
@@ -465,25 +460,6 @@ export function HomeClient() {
         />
 
         {/* Hidden streaming component for initial response */}
-        {chatHistory.some((msg) => msg.isStreaming && msg.stream) && (
-          <div className="hidden">
-            {chatHistory.map((msg, index) =>
-              msg.isStreaming && msg.stream ? (
-                <StreamingMessage
-                  key={`streaming-${msg.type}-${index}`}
-                  stream={msg.stream}
-                  messageId={`msg-${index}`}
-                  onComplete={handleStreamingComplete}
-                  onChatData={handleChatData}
-                  onError={(error) => {
-                    console.error("Streaming error:", error);
-                    setIsLoading(false);
-                  }}
-                />
-              ) : null,
-            )}
-          </div>
-        )}
       </div>
     );
   }
@@ -531,12 +507,13 @@ export function HomeClient() {
               />
               <PromptInputToolbar>
                 <PromptInputTools>
+                  <ModelSwitcher />
+                </PromptInputTools>
+                <PromptInputTools>
                   <PromptInputImageButton
                     onImageSelect={handleImageFiles}
                     disabled={isLoading}
                   />
-                </PromptInputTools>
-                <PromptInputTools>
                   <PromptInputMicButton
                     onTranscript={(transcript) => {
                       setMessage(
@@ -548,6 +525,8 @@ export function HomeClient() {
                     }}
                     disabled={isLoading}
                   />
+                </PromptInputTools>
+                <PromptInputTools>
                   <PromptInputSubmit
                     disabled={!message.trim() || isLoading}
                     status={isLoading ? "streaming" : "ready"}
@@ -560,110 +539,20 @@ export function HomeClient() {
           {/* Suggestions */}
           <div className="mx-auto mt-4 max-w-2xl">
             <Suggestions>
-              <Suggestion
-                onClick={() => {
-                  setMessage("Landing page");
-                  // Submit after setting message
-                  setTimeout(() => {
-                    const form = textareaRef.current?.form;
-                    if (form) {
-                      form.requestSubmit();
-                    }
-                  }, 0);
-                }}
-                suggestion="Landing page"
-              />
-              <Suggestion
-                onClick={() => {
-                  setMessage("Todo app");
-                  // Submit after setting message
-                  setTimeout(() => {
-                    const form = textareaRef.current?.form;
-                    if (form) {
-                      form.requestSubmit();
-                    }
-                  }, 0);
-                }}
-                suggestion="Todo app"
-              />
-              <Suggestion
-                onClick={() => {
-                  setMessage("Dashboard");
-                  // Submit after setting message
-                  setTimeout(() => {
-                    const form = textareaRef.current?.form;
-                    if (form) {
-                      form.requestSubmit();
-                    }
-                  }, 0);
-                }}
-                suggestion="Dashboard"
-              />
-              <Suggestion
-                onClick={() => {
-                  setMessage("Blog");
-                  // Submit after setting message
-                  setTimeout(() => {
-                    const form = textareaRef.current?.form;
-                    if (form) {
-                      form.requestSubmit();
-                    }
-                  }, 0);
-                }}
-                suggestion="Blog"
-              />
-              <Suggestion
-                onClick={() => {
-                  setMessage("E-commerce");
-                  // Submit after setting message
-                  setTimeout(() => {
-                    const form = textareaRef.current?.form;
-                    if (form) {
-                      form.requestSubmit();
-                    }
-                  }, 0);
-                }}
-                suggestion="E-commerce"
-              />
-              <Suggestion
-                onClick={() => {
-                  setMessage("Portfolio");
-                  // Submit after setting message
-                  setTimeout(() => {
-                    const form = textareaRef.current?.form;
-                    if (form) {
-                      form.requestSubmit();
-                    }
-                  }, 0);
-                }}
-                suggestion="Portfolio"
-              />
-              <Suggestion
-                onClick={() => {
-                  setMessage("Chat app");
-                  // Submit after setting message
-                  setTimeout(() => {
-                    const form = textareaRef.current?.form;
-                    if (form) {
-                      form.requestSubmit();
-                    }
-                  }, 0);
-                }}
-                suggestion="Chat app"
-              />
-              <Suggestion
-                onClick={() => {
-                  setMessage("Calculator");
-                  // Submit after setting message
-                  setTimeout(() => {
-                    const form = textareaRef.current?.form;
-                    if (form) {
-                      form.requestSubmit();
-                    }
-                  }, 0);
-                }}
-                suggestion="Calculator"
-              />
+              {SUGGESTIONS.map((s) => (
+                <Suggestion
+                  key={s.label}
+                  label={s.label}
+                  prompt={s.prompt}
+                  onClick={(prompt) => {
+                    setMessage(prompt);
+                    setTimeout(() => {
+                      const form = textareaRef.current?.form;
+                      if (form) form.requestSubmit();
+                    }, 0);
+                  }}
+                />
+              ))}
             </Suggestions>
           </div>
 
@@ -672,10 +561,10 @@ export function HomeClient() {
             <p>
               Powered by{" "}
               <Link
-                href="https://v0-sdk.dev"
+                href="https://chatjimmy.ai"
                 className="text-foreground hover:underline"
               >
-                v0 SDK
+                ChatJimmy
               </Link>
             </p>
           </div>

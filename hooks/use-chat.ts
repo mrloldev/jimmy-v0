@@ -1,9 +1,9 @@
-import type { MessageBinaryFormat } from "@v0-sdk/react";
 import { useRouter } from "next/navigation";
+import { useModel } from "@/contexts/model-context";
 import { useCallback, useEffect, useState } from "react";
 import useSWR, { mutate } from "swr";
 import { useStreaming } from "@/contexts/streaming-context";
-import type { Chat, ChatData, ChatMessage } from "@/types/chat";
+import type { Chat, ChatMessage } from "@/types/chat";
 
 /**
  * Extracts a chat ID from a nested content structure.
@@ -122,6 +122,7 @@ async function parseErrorResponse(response: Response): Promise<string> {
  */
 export function useChat(chatId: string) {
   const router = useRouter();
+  const { model, useCoT } = useModel();
   const { handoff, clearHandoff } = useStreaming();
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -148,8 +149,10 @@ export function useChat(chatId: string) {
           setChatHistory(
             chat.messages.map((msg) => ({
               type: msg.role,
-              // Use experimental_content if available, otherwise fall back to plain content
-              content: msg.experimental_content || msg.content,
+              content:
+                typeof msg.experimental_content === "string"
+                  ? msg.experimental_content
+                  : msg.content,
             })),
           );
         }
@@ -177,7 +180,7 @@ export function useChat(chatId: string) {
         ...prev,
         {
           type: "assistant",
-          content: [],
+          content: "",
           isStreaming: true,
           stream: handoff.stream,
         },
@@ -207,15 +210,37 @@ export function useChat(chatId: string) {
       ]);
 
       try {
+        let plan: string | undefined;
+        if (useCoT) {
+          const planRes = await fetch("/api/chat/plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: userMessage }),
+          });
+          if (!planRes.ok) {
+            throw new Error(await parseErrorResponse(planRes));
+          }
+          const planData = await planRes.json();
+          plan = planData.plan ?? "";
+          setChatHistory((prev) => [
+            ...prev,
+            { type: "assistant", content: "", plan },
+          ]);
+        }
+
+        const chatBody: Record<string, unknown> = {
+          message: userMessage,
+          chatId,
+          streaming: true,
+          model,
+          ...(attachments && attachments.length > 0 && { attachments }),
+        };
+        if (plan) chatBody.plan = plan;
+
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: userMessage,
-            chatId,
-            streaming: true,
-            ...(attachments && attachments.length > 0 && { attachments }),
-          }),
+          body: JSON.stringify(chatBody),
         });
 
         if (!response.ok) {
@@ -227,15 +252,24 @@ export function useChat(chatId: string) {
         }
 
         setIsStreaming(true);
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            type: "assistant",
-            content: [],
-            isStreaming: true,
-            stream: response.body,
-          },
-        ]);
+        setChatHistory((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.type === "assistant" && last.plan && !last.stream) {
+            return [
+              ...prev.slice(0, -1),
+              { ...last, isStreaming: true, stream: response.body },
+            ];
+          }
+          return [
+            ...prev,
+            {
+              type: "assistant",
+              content: "",
+              isStreaming: true,
+              stream: response.body,
+            },
+          ];
+        });
       } catch (error) {
         console.error("Error:", error);
         const errorMessage =
@@ -249,60 +283,44 @@ export function useChat(chatId: string) {
         setIsLoading(false);
       }
     },
-    [message, isLoading, chatId],
+    [message, isLoading, chatId, model, useCoT],
   );
 
   const handleStreamingComplete = useCallback(
-    async (finalContent: string | MessageBinaryFormat) => {
+    async (finalContent: string, stats?: Record<string, unknown> | null) => {
       setIsStreaming(false);
       setIsLoading(false);
-
-      // Refresh current chat details
-      await fetchAndCacheChatDetails(chatId);
-
-      // Try to extract chat ID from final content if we don't have a current chat
-      if (!currentChat && finalContent && Array.isArray(finalContent)) {
-        const newChatId = extractChatIdFromContent(finalContent);
-        if (newChatId) {
-          await fetchAndCacheChatDetails(newChatId);
-        }
-      }
-
-      // Update chat history with the final content
+      const { parseStructuredOutput } = await import("@/lib/parse-output");
+      const { userResponse } = parseStructuredOutput(finalContent);
+      const displayContent = userResponse || finalContent;
       setChatHistory((prev) => {
         const updated = [...prev];
         const lastIndex = updated.length - 1;
         if (lastIndex >= 0 && updated[lastIndex].isStreaming) {
           updated[lastIndex] = {
             ...updated[lastIndex],
-            content: finalContent,
+            content: displayContent,
             isStreaming: false,
             stream: undefined,
+            stats: stats ?? undefined,
           };
         }
         return updated;
       });
     },
-    [chatId, currentChat],
+    [],
   );
 
-  const handleChatData = useCallback(
-    async (chatData: ChatData) => {
-      if (chatData.id && !currentChat) {
-        // Only update with basic chat data, without demo URL
-        // The demo URL will be fetched in handleStreamingComplete
-        mutate(
-          `/api/chats/${chatData.id}`,
-          {
-            id: chatData.id,
-            url: chatData.webUrl || chatData.url,
-            // Don't set demo URL here - wait for streaming to complete
-          },
-          false,
-        );
-      }
+  const handlePreviewReady = useCallback(
+    (dataUrl: string) => {
+      mutate(
+        `/api/chats/${chatId}`,
+        (prev: Chat | undefined) =>
+          prev ? { ...prev, demo: dataUrl } : { id: chatId, demo: dataUrl },
+        false,
+      );
     },
-    [currentChat],
+    [chatId],
   );
 
   return {
@@ -316,6 +334,6 @@ export function useChat(chatId: string) {
     isLoadingChat,
     handleSendMessage,
     handleStreamingComplete,
-    handleChatData,
+    handlePreviewReady,
   };
 }

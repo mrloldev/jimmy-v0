@@ -73,7 +73,8 @@ export function EnvSetup({ missingVars }: EnvSetupProps) {
             </Button>
 
             <p className="text-gray-500 text-sm dark:text-gray-400">
-              After adding the variables, restart your server
+              Replace placeholders with real values. Chat uses ChatJimmy (Llama).
+              Restart the server after editing .env.
             </p>
           </div>
         </div>

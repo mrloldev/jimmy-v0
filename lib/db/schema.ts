@@ -1,5 +1,12 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { pgTable, timestamp, unique, uuid, varchar } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().notNull().defaultRandom(),
@@ -29,3 +36,11 @@ export const chat_ownerships = pgTable(
 );
 
 export type ChatOwnership = InferSelectModel<typeof chat_ownerships>;
+
+export const chat_demos = pgTable("chat_demos", {
+  chat_id: varchar("chat_id", { length: 255 }).primaryKey(),
+  html: text("html").notNull(),
+  created_at: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type ChatDemo = InferSelectModel<typeof chat_demos>;

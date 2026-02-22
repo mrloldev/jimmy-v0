@@ -1,11 +1,7 @@
 {
-  "name": "v0.diy",
+  "name": "jimmy",
   "version": "1.0.0",
   "private": true,
-  "author": {
-    "name": "Sujal Shah",
-    "email": "sujal.shah.dev@gmail.com"
-  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "tsx lib/db/migrate && next build --turbopack",
@@ -57,7 +53,6 @@
     "lucide-react": "0.562.0",
     "nanoid": "5.1.6",
     "next": "16.1.2",
-    "next-auth": "5.0.0-beta.30",
     "next-themes": "0.4.6",
     "postgres": "3.4.8",
     "react": "19.2.3",

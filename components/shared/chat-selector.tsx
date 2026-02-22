@@ -13,7 +13,6 @@ import {
   Users,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,7 +95,6 @@ const getPrivacyDisplayName = (privacy: string) =>
 export function ChatSelector() {
   const router = useRouter();
   const pathname = usePathname();
-  const { data: session } = useSession();
   const [chats, setChats] = useState<Chat[]>([]);
   const [_isLoading, setIsLoading] = useState(false);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
@@ -117,12 +115,7 @@ export function ChatSelector() {
     ? pathname.split("/")[2]
     : null;
 
-  // Fetch user's chats
   useEffect(() => {
-    if (!session?.user?.id) {
-      return;
-    }
-
     const fetchChats = async () => {
       setIsLoading(true);
       try {
@@ -139,7 +132,7 @@ export function ChatSelector() {
     };
 
     fetchChats();
-  }, [session?.user?.id]);
+  }, []);
 
   const handleValueChange = useCallback(
     (chatId: string) => router.push(`/chats/${chatId}`),
@@ -267,11 +260,6 @@ export function ChatSelector() {
     isDuplicatingChat ||
     isChangingVisibility;
 
-  // Don't show if user is not authenticated
-  if (!session?.user?.id) {
-    return null;
-  }
-
   const currentChat = currentChatId
     ? chats.find((c) => c.id === currentChatId)
     : null;
@@ -327,13 +315,13 @@ export function ChatSelector() {
             <DropdownMenuContent align="end">
               <DropdownMenuItem asChild>
                 <a
-                  href={`https://v0.app/chat/${currentChatId}`}
+                  href={`https://chatjimmy.ai`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center"
                 >
                   <ExternalLink className="mr-2 h-4 w-4" />
-                  View on v0.app
+                  ChatJimmy
                 </a>
               </DropdownMenuItem>
               <DropdownMenuSeparator />

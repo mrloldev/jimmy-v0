@@ -101,13 +101,13 @@ export function ChatMenu({ chatId }: ChatMenuProps) {
         <DropdownMenuContent align="end">
           <DropdownMenuItem asChild>
             <a
-              href={`https://v0.app/chat/${chatId}`}
+              href={`https://chatjimmy.ai`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center"
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              View on v0.app
+              ChatJimmy
             </a>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
