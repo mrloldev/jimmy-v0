@@ -1,6 +1,6 @@
 "use client";
 
-import { JimmyStreamingMessage } from "@/components/chat/jimmy-streaming-message";
+import { nanoid } from "nanoid";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -21,15 +21,14 @@ import {
   savePromptToStorage,
 } from "@/components/ai-elements/prompt-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
-import { ModelSwitcher } from "@/components/shared/model-switcher";
-import { useModel } from "@/contexts/model-context";
-import { SUGGESTIONS } from "@/lib/suggestions";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { PreviewPanel } from "@/components/chat/preview-panel";
 import { AppHeader } from "@/components/shared/app-header";
+import { ModelSwitcher } from "@/components/shared/model-switcher";
 import { ResizableLayout } from "@/components/shared/resizable-layout";
-import { nanoid } from "nanoid";
+import { useModel } from "@/contexts/model-context";
+import { SUGGESTIONS } from "@/lib/suggestions";
 
 // Component that uses useSearchParams - needs to be wrapped in Suspense
 function SearchParamsHandler({ onReset }: { onReset: () => void }) {
@@ -233,7 +232,9 @@ export function HomeClient() {
         model,
         attachments: currentAttachments.map((att) => ({ url: att.dataUrl })),
       };
-      if (plan) chatBody.plan = plan;
+      if (plan) {
+        chatBody.plan = plan;
+      }
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -360,7 +361,9 @@ export function HomeClient() {
         streaming: true,
         model,
       };
-      if (plan) chatBody.plan = plan;
+      if (plan) {
+        chatBody.plan = plan;
+      }
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -525,8 +528,6 @@ export function HomeClient() {
                     }}
                     disabled={isLoading}
                   />
-                </PromptInputTools>
-                <PromptInputTools>
                   <PromptInputSubmit
                     disabled={!message.trim() || isLoading}
                     status={isLoading ? "streaming" : "ready"}
@@ -548,7 +549,9 @@ export function HomeClient() {
                     setMessage(prompt);
                     setTimeout(() => {
                       const form = textareaRef.current?.form;
-                      if (form) form.requestSubmit();
+                      if (form) {
+                        form.requestSubmit();
+                      }
                     }, 0);
                   }}
                 />

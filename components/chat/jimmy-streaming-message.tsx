@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { consumeSSEStream } from "@/lib/stream-consumer";
 import { buildFullDocument, parseStructuredOutput } from "@/lib/parse-output";
+import { consumeSSEStream } from "@/lib/stream-consumer";
 
 interface JimmyStreamingMessageProps {
   stream: ReadableStream<Uint8Array>;
-  onComplete: (finalText: string, stats?: Record<string, unknown> | null) => void;
+  onComplete: (
+    finalText: string,
+    stats?: Record<string, unknown> | null,
+  ) => void;
   onPreviewReady?: (url: string) => void;
   onChunk?: (chunk: string) => void;
   onError?: (error: Error) => void;
@@ -33,12 +36,11 @@ export function JimmyStreamingMessage({
     })
       .then(({ text, stats }) => {
         onComplete(text, stats);
-        const { html, js, head, css } = parseStructuredOutput(text);
-        if (html || js) {
+        const { react, head, css } = parseStructuredOutput(text);
+        if (react) {
           try {
             const fullHtml = buildFullDocument(
-              html,
-              js,
+              react,
               head || undefined,
               undefined,
               css || undefined,
@@ -46,7 +48,9 @@ export function JimmyStreamingMessage({
             if (blobUrlRef.current) {
               URL.revokeObjectURL(blobUrlRef.current);
             }
-            const blob = new Blob([fullHtml], { type: "text/html;charset=utf-8" });
+            const blob = new Blob([fullHtml], {
+              type: "text/html;charset=utf-8",
+            });
             const url = URL.createObjectURL(blob);
             blobUrlRef.current = url;
             onPreviewReady?.(url);
@@ -69,7 +73,7 @@ export function JimmyStreamingMessage({
   }, [stream, onComplete, onPreviewReady, onChunk, onError]);
 
   return (
-    <div className="mb-4 whitespace-pre-wrap break-words text-gray-700 leading-relaxed dark:text-gray-200 font-mono text-sm">
+    <div className="mb-4 whitespace-pre-wrap break-words font-mono text-gray-700 text-sm leading-relaxed dark:text-gray-200">
       {displayText || (
         <span className="text-muted-foreground">Generating...</span>
       )}

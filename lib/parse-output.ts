@@ -1,88 +1,4 @@
-import { buildFullHtml } from "./html-template";
-
-function extractInlineScripts(html: string): { html: string; scripts: string[] } {
-  const scripts: string[] = [];
-  const withoutScripts = html.replace(
-    /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi,
-    (match, content) => {
-      const typeMatch = match.match(/type\s*=\s*["']([^"']+)["']/i);
-      const type = typeMatch?.[1]?.toLowerCase();
-      if (type === "text/template" || type === "text/x-handlebars-template") {
-        return match;
-      }
-      scripts.push(content.trim());
-      return "";
-    },
-  );
-  return { html: withoutScripts.trim(), scripts };
-}
-
-function removeDuplicateTemplatePlaceholders(html: string): string {
-  const templateIds: string[] = [];
-  const scriptTemplateRe =
-    /<script[^>]*\btype\s*=\s*["']text\/template["'][^>]*\bid\s*=\s*["']([^"']+)["']|<script[^>]*\bid\s*=\s*["']([^"']+)["'][^>]*\btype\s*=\s*["']text\/template["']/gi;
-  let m: RegExpExecArray | null;
-  while ((m = scriptTemplateRe.exec(html))) {
-    templateIds.push(m[1] || m[2] || "");
-  }
-  const ids = [...new Set(templateIds.filter(Boolean))];
-  let result = html;
-  for (const id of ids) {
-    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    result = result.replace(
-      new RegExp(
-        `<(div|span|p)[^>]*id\\s*=\\s*["']${escaped}["'][^>]*>\\s*</\\1>`,
-        "gi",
-      ),
-      "",
-    );
-  }
-  return result;
-}
-
-function fixTemplateInWrongPlace(html: string): string {
-  let result = removeDuplicateTemplatePlaceholders(html);
-  const templateInside = /<(ul|div)([^>]*)>[\s\S]*?<script[^>]*type\s*=\s*["']text\/(template|x-handlebars-template)["'][^>]*>[\s\S]*?<\/script>[\s\S]*?<\/\1>/i;
-  if (templateInside.test(result)) {
-    result = result.replace(
-      /<(ul|div)([^>]*)>([\s\S]*?)<script\s+([^>]*type\s*=\s*["']text\/(template|x-handlebars-template)["'][^>]*)>([\s\S]*?)<\/script>([\s\S]*?)<\/\1>/gi,
-      (_m, tag, attrs, before, scriptAttrs, scriptContent, after) => {
-        const idMatch = attrs.match(/id\s*=\s*["']([^"']+)["']/);
-        const containerId = idMatch?.[1] ?? "list";
-        const tplIdMatch = scriptAttrs.match(/id\s*=\s*["']([^"']+)["']/);
-        const tplId = tplIdMatch?.[1] ?? containerId.replace(/-list$/, "-tpl");
-        return `<${tag}${attrs}>${before}${after}</${tag}>\n  <script ${scriptAttrs}>${scriptContent}</script>`;
-      },
-    );
-  }
-  const hasTemplateScript =
-    /<script[^>]*type\s*=\s*["']text\/(template|x-handlebars-template)["'][^>]*>/i.test(
-      result,
-    );
-  if (hasTemplateScript) {
-    return result;
-  }
-  const handlebarsBlock = result.match(/\{\{#each[\s\S]*?\{\{\/each\}\}/);
-  if (!handlebarsBlock) {
-    return result;
-  }
-
-  const templateContent = handlebarsBlock[0];
-  const eachMatch = result.match(/\{\{#each\s+(\w+)\s*\}\}/);
-  const dataVar = eachMatch?.[1] ?? "items";
-  const tplId = dataVar.replace(/s$/, "") + "-tpl";
-  const containerId = dataVar.replace(/s$/, "") + "-list";
-
-  const containerPattern = new RegExp(
-    `<((?:div|ul))([^>]*)>\\s*${templateContent.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*</\\1>`,
-    "i",
-  );
-  return result.replace(containerPattern, (_match, tag, attrs) => {
-    const hasId = /id\s*=/.test(attrs);
-    const attrsWithId = hasId ? attrs : ` id="${containerId}"${attrs}`;
-    return `<${tag}${attrsWithId}></${tag}>\n  <script type="text/template" id="${tplId}">\n${templateContent}\n  </script>`;
-  });
-}
+import { buildFullHtmlReact } from "./html-template";
 
 const EXPLANATION_PATTERNS = [
   /\n\s*Changes include:/i,
@@ -100,15 +16,19 @@ const EXPLANATION_PATTERNS = [
   /\n\s*Also,?\s/i,
   /\n\s*I've used the requested/i,
   /\n\s*The (?:code|app) (?:has been )?tested/i,
-  /\n\s*```\s*(?:html|javascript|js)\s*$/i,
+  /\n\s*```\s*(?:html|javascript|js|jsx)\s*$/i,
 ];
 
-const JS_BAD_PATTERNS = [
-  /document\.getElementById\s*\(\s*["']add-btn["']\s*\)\.click\s*\(\s*\)\s*;?\s*\n?/g,
-];
+const TRAILING_ARTIFACTS =
+  /[\s\n]*(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?::\d+)?[\s\n]*$/i;
+const LEADING_JUNK = /^\s*[=*\s]+\n?/;
 
-function stripExplanations(js: string): string {
-  const trimmed = js.trim();
+function stripExplanations(react: string): string {
+  let trimmed = react.trim();
+  while (LEADING_JUNK.test(trimmed)) {
+    trimmed = trimmed.replace(LEADING_JUNK, "");
+  }
+  trimmed = trimmed.replace(TRAILING_ARTIFACTS, "");
   let cutAt = trimmed.length;
   for (const pattern of EXPLANATION_PATTERNS) {
     const match = trimmed.match(pattern);
@@ -123,9 +43,20 @@ const ALL_MARKERS = [
   "===RESPONSE===",
   "===HEAD===",
   "===CSS===",
-  "===HTML===",
-  "===JS===",
+  "===REACT===",
 ];
+
+function normalizeMarkers(raw: string): string {
+  return raw
+    .replace(/={2,}\s*RESPONSE\s*={2,}/gi, "===RESPONSE===")
+    .replace(/={2,}\s*HEAD\s*={2,}/gi, "===HEAD===")
+    .replace(/={2,}\s*CSS\s*={2,}/gi, "===CSS===")
+    .replace(/={2,}\s*REACT\s*={2,}/gi, "===REACT===")
+    .replace(/==RESPONSE==/g, "===RESPONSE===")
+    .replace(/==HEAD==/g, "===HEAD===")
+    .replace(/==CSS==/g, "===CSS===")
+    .replace(/==REACT==/g, "===REACT===");
+}
 
 function extractBlockContent(
   raw: string,
@@ -141,22 +72,21 @@ export function parseStructuredOutput(raw: string): {
   userResponse: string;
   head: string;
   css: string;
-  html: string;
-  js: string;
+  react: string;
 } {
+  const normalized = normalizeMarkers(raw);
   const responseMarker = "===RESPONSE===";
   const headMarker = "===HEAD===";
   const cssMarker = "===CSS===";
-  const htmlMarker = "===HTML===";
-  const jsMarker = "===JS===";
+  const reactMarker = "===REACT===";
 
-  let rawContent = raw;
-  const firstBlock = raw.indexOf(responseMarker);
-  if (firstBlock === -1 && raw.includes(htmlMarker)) {
-    const firstHtml = raw.indexOf(htmlMarker);
-    if (firstHtml > 0) rawContent = raw.slice(firstHtml);
+  let rawContent = normalized;
+  const firstBlock = rawContent.indexOf(responseMarker);
+  if (firstBlock === -1 && rawContent.includes(reactMarker)) {
+    const firstReact = rawContent.indexOf(reactMarker);
+    if (firstReact > 0) rawContent = rawContent.slice(firstReact);
   } else if (firstBlock > 0) {
-    rawContent = raw.slice(firstBlock);
+    rawContent = rawContent.slice(firstBlock);
   }
 
   const positions = ALL_MARKERS.map((m) => ({ m, i: rawContent.indexOf(m) }));
@@ -179,59 +109,80 @@ export function parseStructuredOutput(raw: string): {
   const cleaned = respContent
     .replace(/^###\s*[\w\s]+\s*###?/g, "")
     .replace(/\n###\s*/g, " ")
+    .replace(/^\s*=+\s*\n?/, "")
     .trim();
-  if (!cleaned.includes("===") && !cleaned.includes("{{")) {
+  if (!(cleaned.includes("===") || cleaned.includes("{{"))) {
     userResponse = cleaned.split("\n")[0]?.trim() ?? cleaned;
   }
-  const hasHtml = extractBlockContent(rawContent, htmlMarker, getNextStart(htmlMarker)).length > 0;
-  if (!userResponse && hasHtml) {
+  const hasReact =
+    extractBlockContent(rawContent, reactMarker, getNextStart(reactMarker))
+      .length > 0;
+  if (!userResponse && hasReact) {
     userResponse = "Your app preview is ready.";
   }
 
-  const head = extractBlockContent(rawContent, headMarker, getNextStart(headMarker));
+  const head = extractBlockContent(
+    rawContent,
+    headMarker,
+    getNextStart(headMarker),
+  );
   const css = present.some((x) => x.m === cssMarker)
     ? extractBlockContent(rawContent, cssMarker, getNextStart(cssMarker))
     : "";
-  const html = extractBlockContent(rawContent, htmlMarker, getNextStart(htmlMarker));
-  let jsRaw = extractBlockContent(rawContent, jsMarker, rawContent.length);
-  jsRaw = JS_BAD_PATTERNS.reduce((s, p) => s.replace(p, ""), jsRaw);
-  const js = stripExplanations(jsRaw);
+  const reactRaw = extractBlockContent(
+    rawContent,
+    reactMarker,
+    rawContent.length,
+  );
+  const react = stripExplanations(reactRaw);
 
-  return { userResponse, head, css, html, js };
+  return { userResponse, head, css, react };
 }
 
 const BLOCKED_HEAD_PATTERNS = [
-  /tailwindcss|@tailwind|lucide|daisyui|handlebars|ejs|cdn\.jsdelivr|unpkg\.com|cdnjs\.cloudflare/i,
+  /tailwindcss|@tailwind|lucide|daisyui|cdn\.jsdelivr|unpkg\.com|cdnjs\.cloudflare/i,
   /next\.svg/,
   /italics?/i,
 ];
 
+const PLACEHOLDER_HEAD =
+  /^(empty\.?\s*(fonts only if requested\.?)?|leave empty\.?\s*(output nothing\.?)?|nothing\.?)$/i;
+
 function sanitizeHead(head: string): string {
-  return head
+  const trimmed = head.trim();
+  if (PLACEHOLDER_HEAD.test(trimmed)) return "";
+  return trimmed
     .split("\n")
     .filter((line) => {
-      const trimmed = line.trim();
-      const lower = trimmed.toLowerCase();
-      if (BLOCKED_HEAD_PATTERNS.some((p) => p.test(lower))) {
-        return false;
-      }
+      const lineTrimmed = line.trim();
+      const lower = lineTrimmed.toLowerCase();
+      if (BLOCKED_HEAD_PATTERNS.some((p) => p.test(lower))) return false;
+      if (PLACEHOLDER_HEAD.test(lineTrimmed)) return false;
       return true;
     })
     .join("\n")
     .trim();
 }
 
+const PLACEHOLDER_CSS = /^(leave empty\.?|output nothing\.?|nothing\.?)$/i;
+const INSTRUCTION_CSS =
+  /^(leave empty\.?\s*)?(daisyui and tailwind are pre-loaded|use tailwind utility classes).*/is;
+
+function sanitizeCss(css: string): string {
+  const trimmed = css.trim();
+  if (!trimmed) return "";
+  if (PLACEHOLDER_CSS.test(trimmed)) return "";
+  if (INSTRUCTION_CSS.test(trimmed)) return "";
+  return trimmed;
+}
+
 export function buildFullDocument(
-  html: string,
-  js: string,
+  react: string,
   head?: string,
   baseUrl?: string,
   css?: string,
 ): string {
-  const fixedHtml = fixTemplateInWrongPlace(html);
-  const { html: cleanHtml, scripts } = extractInlineScripts(fixedHtml);
-  const mergedJs =
-    js.trim().length > 0 ? js.trim() : scripts.filter(Boolean).join("\n\n");
   const cleanHead = head ? sanitizeHead(head) : undefined;
-  return buildFullHtml(cleanHtml, mergedJs, cleanHead, baseUrl, css);
+  const cleanCss = css ? sanitizeCss(css) : undefined;
+  return buildFullHtmlReact(react, cleanHead, baseUrl, cleanCss);
 }

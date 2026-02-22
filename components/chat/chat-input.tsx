@@ -159,8 +159,6 @@ export function ChatInput({
                   console.error("Speech recognition error:", error);
                 }}
               />
-            </PromptInputTools>
-            <PromptInputTools>
               <PromptInputSubmit
                 disabled={!message}
                 status={isLoading ? "streaming" : "ready"}
@@ -181,7 +179,9 @@ export function ChatInput({
                   setMessage(prompt);
                   setTimeout(() => {
                     const form = textareaRef?.current?.form;
-                    if (form) form.requestSubmit();
+                    if (form) {
+                      form.requestSubmit();
+                    }
                   }, 0);
                 }}
               />

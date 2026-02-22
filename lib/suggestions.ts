@@ -2,7 +2,7 @@ export const SUGGESTIONS = [
   {
     label: "Todo app",
     prompt:
-      "Todo app with add/delete, filter tabs (All/Active), Handlebars list, localStorage persistence",
+      "Todo app with add/delete, filter tabs (All/Active/Completed), React state list, empty state",
   },
   {
     label: "Landing page",
@@ -12,7 +12,7 @@ export const SUGGESTIONS = [
   {
     label: "Product list",
     prompt:
-      "Product list with cards, add to cart button per item, Handlebars template, empty state",
+      "Product list with cards, add to cart button per item, React state list, empty state",
   },
   {
     label: "Dashboard",
@@ -22,7 +22,7 @@ export const SUGGESTIONS = [
   {
     label: "Blog",
     prompt:
-      "Blog layout with post cards, category filter tabs, Handlebars for posts",
+      "Blog layout with post cards, category filter tabs, React state for posts",
   },
   {
     label: "Contact form",
@@ -32,11 +32,10 @@ export const SUGGESTIONS = [
   {
     label: "Recipe card",
     prompt:
-      "Recipe card with title, ingredients list, steps, Handlebars template",
+      "Recipe card with title, ingredients list, steps, DaisyUI card layout",
   },
   {
     label: "Timer",
-    prompt:
-      "Timer with start, pause, reset buttons, display seconds, localStorage for persistence",
+    prompt: "Timer with start, pause, reset buttons, display seconds",
   },
 ] as const;
